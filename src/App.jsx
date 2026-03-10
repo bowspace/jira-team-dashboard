@@ -1930,7 +1930,7 @@ export default function App() {
             <div className={`${panel} overflow-hidden`}>
                 <div className={`p-6 border-b flex justify-between items-center ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
                     <h3 className={`text-lg font-bold ${dark ? 'text-white' : 'text-slate-800'}`}>{t.taskDetails}</h3>
-                    <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.showing} {Math.min(filteredData.length, 50)} {t.of} {filteredData.length} {t.items}</span>
+                    <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.showing} {Math.min(filteredData.filter(d => d.issueType !== 'Epic').length, 50)} {t.of} {filteredData.filter(d => d.issueType !== 'Epic').length} {t.items}</span>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
@@ -1949,7 +1949,7 @@ export default function App() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredData.slice(0, 50).map((item, index) => (
+                            {filteredData.filter(d => d.issueType !== 'Epic').slice(0, 50).map((item, index) => (
                                 <tr key={index} className={`border-b transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
                                     <td className={`${tdClass} font-medium`}>
                                         <a href={`${JIRA_BASE}/${item.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-400 hover:underline">{item.id}</a>
@@ -1989,9 +1989,9 @@ export default function App() {
                         </tbody>
                     </table>
                 </div>
-                {filteredData.length > 50 && (
+                {filteredData.filter(d => d.issueType !== 'Epic').length > 50 && (
                     <div className={`p-4 text-center text-sm border-t ${dark ? 'text-slate-500 bg-slate-800/50 border-slate-700' : 'text-slate-500 bg-slate-50 border-slate-200'}`}>
-                        {t.showingFirst50} {filteredData.length} {t.items}
+                        {t.showingFirst50} {filteredData.filter(d => d.issueType !== 'Epic').length} {t.items}
                     </div>
                 )}
             </div>
