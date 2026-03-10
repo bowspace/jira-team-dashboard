@@ -5,6 +5,12 @@ import {
 } from 'recharts';
 import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, X, Target, Bug, TrendingUp, Shield, Zap, Info } from 'lucide-react';
 
+// --- Helper: check if status counts as "done" ---
+const isDone = (status) => {
+    const s = (status || '').toLowerCase();
+    return s === 'done' || s === "won't fix" || s === 'wont fix';
+};
+
 // --- Multi-select dropdown component ---
 function MultiSelect({ options, selected, onChange, label, dark, epicMap }) {
     const [open, setOpen] = useState(false);
@@ -625,7 +631,8 @@ export default function App() {
             summary: findCol(headers, 'Summary'),
             epicLink: findCol(headers, 'Custom field (Epic Link)'),
             issueType: findCol(headers, 'Issue Type'),
-            priority: findCol(headers, 'Priority')
+            priority: findCol(headers, 'Priority'),
+            parent: findCol(headers, 'Parent') >= 0 ? findCol(headers, 'Parent') : findCol(headers, 'Parent id')
         };
         // Find all Sprint columns (Y-AJ, all named "Sprint")
         const sprintIndices = headers.reduce((acc, h, i) => {
@@ -667,6 +674,7 @@ export default function App() {
                 summary: row[idx.summary] || '-',
                 issueType: row[idx.issueType] || '',
                 priority: row[idx.priority] || '',
+                parent: (idx.parent >= 0 ? row[idx.parent] : '') || '',
                 epicLink: epicLinkVal,
                 epicName: epics[epicLinkVal]?.summary || '',
                 sheetName,
@@ -742,6 +750,30 @@ export default function App() {
                 seen.set(task.id, task);
             }
 
+            // Build parent-child relationships and assign weights
+            const childrenOf = {};
+            for (const task of seen.values()) {
+                if (task.parent) {
+                    if (!childrenOf[task.parent]) childrenOf[task.parent] = [];
+                    childrenOf[task.parent].push(task.id);
+                }
+            }
+            for (const task of seen.values()) {
+                if (task.issueType === 'Epic') {
+                    task.weight = 0;
+                } else if (childrenOf[task.id]) {
+                    // Parent task with subtasks -> weight 0 (subtasks carry the score)
+                    task.weight = 0;
+                    task.subtaskIds = childrenOf[task.id];
+                } else if (task.parent && childrenOf[task.parent]) {
+                    // Subtask -> weight = 1/N
+                    task.weight = 1 / childrenOf[task.parent].length;
+                } else {
+                    // Standalone task
+                    task.weight = 1;
+                }
+            }
+
             setData(Array.from(seen.values()));
             setLoadedSheets(foundSheets);
             setDataSourceInfo('Google Sheet (Live)');
@@ -791,6 +823,7 @@ export default function App() {
 
     const filteredData = useMemo(() => {
         return data.filter(item => {
+            if (item.issueType === 'Epic') return false;
             if (filters.dateValues.length > 0) {
                 const dateField = filters.dateType === 'weekly' ? item.week : filters.dateType === 'monthly' ? item.month : item.quarter;
                 if (!filters.dateValues.includes(dateField)) return false;
@@ -805,19 +838,21 @@ export default function App() {
     }, [data, filters]);
 
     const metrics = useMemo(() => {
-        const total = filteredData.length;
-        let totalDevTime = 0, totalDelayDays = 0, delayedTasksCount = 0;
+        let totalWeight = 0, completedWeight = 0, totalDevTime = 0, totalDelayDays = 0, delayedWeight = 0;
         filteredData.forEach(item => {
-            totalDevTime += item.devTime || 0;
-            if (item.delayDays > 0) { totalDelayDays += item.delayDays; delayedTasksCount++; }
+            const w = item.weight || 0;
+            totalWeight += w;
+            if (isDone(item.status)) completedWeight += w;
+            totalDevTime += (item.devTime || 0) * w;
+            if (item.delayDays > 0) { totalDelayDays += item.delayDays * w; delayedWeight += w; }
         });
         return {
-            total,
-            completed: filteredData.filter(d => d.status === 'Done').length,
-            avgDevTime: total ? (totalDevTime / total).toFixed(1) : 0,
-            avgDelay: total ? (totalDelayDays / total).toFixed(1) : 0,
-            onTimeRate: total ? (((total - delayedTasksCount) / total) * 100).toFixed(0) : 0,
-            delayedTasksCount
+            total: Math.round(totalWeight),
+            completed: Math.round(completedWeight),
+            avgDevTime: totalWeight ? (totalDevTime / totalWeight).toFixed(1) : 0,
+            avgDelay: totalWeight ? (totalDelayDays / totalWeight).toFixed(1) : 0,
+            onTimeRate: totalWeight ? (((totalWeight - delayedWeight) / totalWeight) * 100).toFixed(0) : 0,
+            delayedTasksCount: Math.round(delayedWeight)
         };
     }, [filteredData]);
 
@@ -825,18 +860,21 @@ export default function App() {
         const stats = {};
         filteredData.forEach(item => {
             if (!item.epicLink) return;
+            const w = item.weight || 0;
             if (!stats[item.epicLink]) {
                 const epic = epicMap[item.epicLink];
                 stats[item.epicLink] = { epicKey: item.epicLink, epicName: epic?.summary || item.epicLink, epicStatus: epic?.status || '-', epicAssignee: epic?.assignee || '-', epicTargetEnd: epic?.targetEnd || '', total: 0, done: 0, totalDevTime: 0, totalDelay: 0, delayedCount: 0 };
             }
             const s = stats[item.epicLink];
-            s.total++;
-            if (item.status === 'Done') s.done++;
-            s.totalDevTime += item.devTime;
-            if (item.delayDays > 0) { s.totalDelay += item.delayDays; s.delayedCount++; }
+            s.total += w;
+            if (isDone(item.status)) s.done += w;
+            s.totalDevTime += item.devTime * w;
+            if (item.delayDays > 0) { s.totalDelay += item.delayDays * w; s.delayedCount += w; }
         });
         return Object.values(stats).map(s => ({
             ...s,
+            total: Math.round(s.total),
+            done: Math.round(s.done),
             progress: s.total ? Math.round((s.done / s.total) * 100) : 0,
             avgDevTime: s.total ? parseFloat((s.totalDevTime / s.total).toFixed(1)) : 0,
             avgDelay: s.total ? parseFloat((s.totalDelay / s.total).toFixed(1)) : 0,
@@ -847,22 +885,24 @@ export default function App() {
     const projectStats = useMemo(() => {
         const stats = {};
         filteredData.forEach(item => {
+            const w = item.weight || 0;
             if (!stats[item.project]) stats[item.project] = { project: item.project, devTime: 0, delayDays: 0, count: 0 };
-            stats[item.project].devTime += item.devTime;
-            stats[item.project].delayDays += item.delayDays;
-            stats[item.project].count++;
+            stats[item.project].devTime += item.devTime * w;
+            stats[item.project].delayDays += item.delayDays * w;
+            stats[item.project].count += w;
         });
-        return Object.values(stats).map(s => ({ project: s.project, avgDevTime: parseFloat((s.devTime / s.count).toFixed(1)), avgDelay: parseFloat((s.delayDays / s.count).toFixed(1)) }));
+        return Object.values(stats).map(s => ({ project: s.project, avgDevTime: s.count ? parseFloat((s.devTime / s.count).toFixed(1)) : 0, avgDelay: s.count ? parseFloat((s.delayDays / s.count).toFixed(1)) : 0 }));
     }, [filteredData]);
 
     const assigneeStats = useMemo(() => {
         const stats = {};
         filteredData.forEach(item => {
+            const w = item.weight || 0;
             if (!stats[item.assignee]) stats[item.assignee] = { assignee: item.assignee, tasks: 0, delayDays: 0 };
-            stats[item.assignee].tasks++;
-            stats[item.assignee].delayDays += item.delayDays;
+            stats[item.assignee].tasks += w;
+            stats[item.assignee].delayDays += item.delayDays * w;
         });
-        return Object.values(stats).map(s => ({ assignee: s.assignee, tasks: s.tasks, avgDelay: parseFloat((s.delayDays / s.tasks).toFixed(1)) }));
+        return Object.values(stats).map(s => ({ assignee: s.assignee, tasks: Math.round(s.tasks), avgDelay: s.tasks ? parseFloat((s.delayDays / s.tasks).toFixed(1)) : 0 }));
     }, [filteredData]);
 
     const delayPieData = [
@@ -873,39 +913,45 @@ export default function App() {
     const trendData = useMemo(() => {
         const stats = {};
         filteredData.forEach(item => {
+            const w = item.weight || 0;
             if (item.month === '-') return;
             if (!stats[item.month]) stats[item.month] = { month: item.month, tasks: 0, delay: 0 };
-            stats[item.month].tasks++;
-            stats[item.month].delay += item.delayDays;
+            stats[item.month].tasks += w;
+            stats[item.month].delay += item.delayDays * w;
         });
-        return Object.values(stats).sort((a, b) => a.month.localeCompare(b.month)).map(s => ({ ...s, avgDelay: parseFloat((s.delay / s.tasks).toFixed(1)) }));
+        return Object.values(stats).sort((a, b) => a.month.localeCompare(b.month)).map(s => ({ ...s, tasks: Math.round(s.tasks), avgDelay: s.tasks ? parseFloat((s.delay / s.tasks).toFixed(1)) : 0 }));
     }, [filteredData]);
 
     // --- KPI Scorecard Metrics ---
     const kpiMetrics = useMemo(() => {
-        const total = filteredData.length;
-        const delayed = filteredData.filter(d => d.delayDays > 0).length;
-        const onTimeRate = total ? ((total - delayed) / total) * 100 : 0;
+        let totalWeight = 0, delayedWeight = 0;
+        filteredData.forEach(d => { const w = d.weight || 0; totalWeight += w; if (d.delayDays > 0) delayedWeight += w; });
+        const onTimeRate = totalWeight ? ((totalWeight - delayedWeight) / totalWeight) * 100 : 0;
 
-        // Bug fix timeliness
+        // Bug fix timeliness (weighted)
         const bugs = filteredData.filter(d => d.issueType === 'Bug');
-        const onTimeBugs = bugs.filter(b => b.devTime <= 1);
-        const bugFixRate = bugs.length ? (onTimeBugs.length / bugs.length) * 100 : 100;
+        let bugWeight = 0, onTimeBugWeight = 0;
+        bugs.forEach(b => { const w = b.weight || 0; bugWeight += w; if (b.devTime <= 1) onTimeBugWeight += w; });
+        const bugFixRate = bugWeight ? (onTimeBugWeight / bugWeight) * 100 : 100;
 
-        // Q-over-Q efficiency: find current and previous quarter
+        // Q-over-Q efficiency (weighted)
         const quarters = [...new Set(filteredData.map(d => d.quarter).filter(q => q !== '-'))].sort();
         let efficiencyImprovement = null;
         if (quarters.length >= 2) {
             const currQ = quarters[quarters.length - 1];
             const prevQ = quarters[quarters.length - 2];
-            const currTasks = filteredData.filter(d => d.quarter === currQ);
-            const prevTasks = filteredData.filter(d => d.quarter === prevQ);
-            const currAvg = currTasks.length ? currTasks.reduce((s, d) => s + d.devTime, 0) / currTasks.length : 0;
-            const prevAvg = prevTasks.length ? prevTasks.reduce((s, d) => s + d.devTime, 0) / prevTasks.length : 0;
+            let currDevSum = 0, currW = 0, prevDevSum = 0, prevW = 0;
+            filteredData.forEach(d => {
+                const w = d.weight || 0;
+                if (d.quarter === currQ) { currDevSum += d.devTime * w; currW += w; }
+                if (d.quarter === prevQ) { prevDevSum += d.devTime * w; prevW += w; }
+            });
+            const currAvg = currW ? currDevSum / currW : 0;
+            const prevAvg = prevW ? prevDevSum / prevW : 0;
             if (prevAvg > 0) efficiencyImprovement = ((prevAvg - currAvg) / prevAvg) * 100;
         }
 
-        return { onTimeRate, bugFixRate, efficiencyImprovement, bugTotal: bugs.length, bugOnTime: onTimeBugs.length };
+        return { onTimeRate, bugFixRate, efficiencyImprovement, bugTotal: Math.round(bugWeight), bugOnTime: Math.round(onTimeBugWeight) };
     }, [filteredData]);
 
     // --- Individual KPI Table ---
@@ -916,24 +962,25 @@ export default function App() {
         const prevQ = quarters.length >= 2 ? quarters[quarters.length - 2] : null;
 
         filteredData.forEach(item => {
-            if (!byPerson[item.assignee]) byPerson[item.assignee] = { tasks: [], bugs: [], currQDev: [], prevQDev: [] };
-            byPerson[item.assignee].tasks.push(item);
-            if (item.issueType === 'Bug') byPerson[item.assignee].bugs.push(item);
-            if (currQ && item.quarter === currQ) byPerson[item.assignee].currQDev.push(item.devTime);
-            if (prevQ && item.quarter === prevQ) byPerson[item.assignee].prevQDev.push(item.devTime);
+            const w = item.weight || 0;
+            if (!byPerson[item.assignee]) byPerson[item.assignee] = { totalW: 0, delayedW: 0, bugW: 0, bugOnTimeW: 0, sprintSum: 0, currDevSum: 0, currW: 0, prevDevSum: 0, prevW: 0 };
+            const p = byPerson[item.assignee];
+            p.totalW += w;
+            if (item.delayDays > 0) p.delayedW += w;
+            if (item.issueType === 'Bug') { p.bugW += w; if (item.devTime <= 1) p.bugOnTimeW += w; }
+            p.sprintSum += (item.sprintCount || 0) * w;
+            if (currQ && item.quarter === currQ) { p.currDevSum += item.devTime * w; p.currW += w; }
+            if (prevQ && item.quarter === prevQ) { p.prevDevSum += item.devTime * w; p.prevW += w; }
         });
 
         return Object.entries(byPerson).map(([name, d]) => {
-            const total = d.tasks.length;
-            const delayed = d.tasks.filter(t => t.delayDays > 0).length;
-            const onTimeRate = total ? ((total - delayed) / total) * 100 : 0;
-            const bugTotal = d.bugs.length;
-            const bugOnTime = d.bugs.filter(b => b.devTime <= 1).length;
-            const bugFixRate = bugTotal ? (bugOnTime / bugTotal) * 100 : 100;
-            const avgSprint = total ? d.tasks.reduce((s, t) => s + (t.sprintCount || 0), 0) / total : 0;
+            const total = d.totalW;
+            const onTimeRate = total ? ((total - d.delayedW) / total) * 100 : 0;
+            const bugFixRate = d.bugW ? (d.bugOnTimeW / d.bugW) * 100 : 100;
+            const avgSprint = total ? d.sprintSum / total : 0;
 
-            const currAvg = d.currQDev.length ? d.currQDev.reduce((a, b) => a + b, 0) / d.currQDev.length : null;
-            const prevAvg = d.prevQDev.length ? d.prevQDev.reduce((a, b) => a + b, 0) / d.prevQDev.length : null;
+            const currAvg = d.currW ? d.currDevSum / d.currW : null;
+            const prevAvg = d.prevW ? d.prevDevSum / d.prevW : null;
             let devImprovement = null;
             let efficiencyScore = 0;
             if (prevAvg !== null && prevAvg > 0 && currAvg !== null) {
@@ -941,35 +988,37 @@ export default function App() {
                 efficiencyScore = Math.min(devImprovement / 15, 1.0);
                 if (efficiencyScore < 0) efficiencyScore = 0;
             } else {
-                efficiencyScore = 0.5; // default if no data
+                efficiencyScore = 0.5;
             }
 
             const weightedScore = (onTimeRate / 100 * 0.30) + (efficiencyScore * 0.25) + (1.0 * 0.15) + (1.0 * 0.15) + (bugFixRate / 100 * 0.15);
 
-            return { name, total, onTimeRate, devImprovement, bugFixRate, bugTotal, avgSprint, weightedScore, currAvg, prevAvg };
+            return { name, total: Math.round(total), onTimeRate, devImprovement, bugFixRate, bugTotal: Math.round(d.bugW), avgSprint, weightedScore, currAvg, prevAvg };
         }).sort((a, b) => b.weightedScore - a.weightedScore);
     }, [filteredData]);
 
     // --- Bug Analysis ---
     const bugAnalysisData = useMemo(() => {
         const bugs = filteredData.filter(d => d.issueType === 'Bug');
-        // By priority
+        // By priority (weighted)
         const byPriority = {};
         bugs.forEach(b => {
+            const w = b.weight || 0;
             const p = b.priority || 'None';
             if (!byPriority[p]) byPriority[p] = { priority: p, count: 0, totalDev: 0 };
-            byPriority[p].count++;
-            byPriority[p].totalDev += b.devTime;
+            byPriority[p].count += w;
+            byPriority[p].totalDev += b.devTime * w;
         });
-        const priorityData = Object.values(byPriority).map(p => ({ ...p, avgDev: parseFloat((p.totalDev / p.count).toFixed(1)) }));
+        const priorityData = Object.values(byPriority).map(p => ({ ...p, count: Math.round(p.count), avgDev: p.count ? parseFloat((p.totalDev / p.count).toFixed(1)) : 0 }));
 
-        // By assignee
+        // By assignee (weighted)
         const byAssignee = {};
         bugs.forEach(b => {
+            const w = b.weight || 0;
             if (!byAssignee[b.assignee]) byAssignee[b.assignee] = { assignee: b.assignee, count: 0 };
-            byAssignee[b.assignee].count++;
+            byAssignee[b.assignee].count += w;
         });
-        const assigneeData = Object.values(byAssignee).sort((a, b) => b.count - a.count);
+        const assigneeData = Object.values(byAssignee).map(a => ({ ...a, count: Math.round(a.count) })).sort((a, b) => b.count - a.count);
 
         return { bugs, priorityData, assigneeData };
     }, [filteredData]);
@@ -979,12 +1028,13 @@ export default function App() {
         const byPersonMonth = {};
         const allMonths = new Set();
         filteredData.forEach(item => {
+            const w = item.weight || 0;
             if (item.month === '-') return;
             allMonths.add(item.month);
             const key = `${item.assignee}|${item.month}`;
             if (!byPersonMonth[key]) byPersonMonth[key] = { total: 0, count: 0 };
-            byPersonMonth[key].total += item.devTime;
-            byPersonMonth[key].count++;
+            byPersonMonth[key].total += item.devTime * w;
+            byPersonMonth[key].count += w;
         });
         const months = [...allMonths].sort();
         const assignees = [...new Set(filteredData.map(d => d.assignee))];
@@ -993,7 +1043,7 @@ export default function App() {
             assignees.forEach(a => {
                 const key = `${a}|${month}`;
                 const d = byPersonMonth[key];
-                point[a] = d ? parseFloat((d.total / d.count).toFixed(1)) : null;
+                point[a] = d && d.count ? parseFloat((d.total / d.count).toFixed(1)) : null;
             });
             return point;
         });
@@ -1008,13 +1058,14 @@ export default function App() {
         const prevQ = quarters[quarters.length - 2];
         const byPerson = {};
         filteredData.forEach(item => {
-            if (!byPerson[item.assignee]) byPerson[item.assignee] = { currDev: [], prevDev: [] };
-            if (item.quarter === currQ) byPerson[item.assignee].currDev.push(item.devTime);
-            if (item.quarter === prevQ) byPerson[item.assignee].prevDev.push(item.devTime);
+            const w = item.weight || 0;
+            if (!byPerson[item.assignee]) byPerson[item.assignee] = { currDevSum: 0, currW: 0, prevDevSum: 0, prevW: 0 };
+            if (item.quarter === currQ) { byPerson[item.assignee].currDevSum += item.devTime * w; byPerson[item.assignee].currW += w; }
+            if (item.quarter === prevQ) { byPerson[item.assignee].prevDevSum += item.devTime * w; byPerson[item.assignee].prevW += w; }
         });
         return Object.entries(byPerson).map(([name, d]) => {
-            const prevAvg = d.prevDev.length ? d.prevDev.reduce((a, b) => a + b, 0) / d.prevDev.length : null;
-            const currAvg = d.currDev.length ? d.currDev.reduce((a, b) => a + b, 0) / d.currDev.length : null;
+            const prevAvg = d.prevW ? d.prevDevSum / d.prevW : null;
+            const currAvg = d.currW ? d.currDevSum / d.currW : null;
             let improvement = null;
             if (prevAvg && prevAvg > 0 && currAvg !== null) improvement = ((prevAvg - currAvg) / prevAvg) * 100;
             return { name, prevAvg: prevAvg ? parseFloat(prevAvg.toFixed(1)) : null, currAvg: currAvg ? parseFloat(currAvg.toFixed(1)) : null, improvement: improvement !== null ? parseFloat(improvement.toFixed(1)) : null };
@@ -1023,31 +1074,35 @@ export default function App() {
 
     // --- Delay Risk ---
     const delayRiskData = useMemo(() => {
-        // By priority with severity buckets
+        // By priority with severity buckets (weighted)
         const byPriority = {};
         filteredData.forEach(item => {
+            const w = item.weight || 0;
             const p = item.priority || 'None';
             if (!byPriority[p]) byPriority[p] = { priority: p, onTime: 0, d1to3: 0, d3to7: 0, d7plus: 0 };
-            if (item.delayDays === 0) byPriority[p].onTime++;
-            else if (item.delayDays <= 3) byPriority[p].d1to3++;
-            else if (item.delayDays <= 7) byPriority[p].d3to7++;
-            else byPriority[p].d7plus++;
+            if (item.delayDays === 0) byPriority[p].onTime += w;
+            else if (item.delayDays <= 3) byPriority[p].d1to3 += w;
+            else if (item.delayDays <= 7) byPriority[p].d3to7 += w;
+            else byPriority[p].d7plus += w;
         });
-        const priorityData = Object.values(byPriority);
+        const priorityData = Object.values(byPriority).map(p => ({
+            ...p, onTime: Math.round(p.onTime), d1to3: Math.round(p.d1to3), d3to7: Math.round(p.d3to7), d7plus: Math.round(p.d7plus)
+        }));
 
-        // Severity distribution
+        // Severity distribution (weighted)
         let onTime = 0, d1to3 = 0, d3to7 = 0, d7plus = 0;
         filteredData.forEach(item => {
-            if (item.delayDays === 0) onTime++;
-            else if (item.delayDays <= 3) d1to3++;
-            else if (item.delayDays <= 7) d3to7++;
-            else d7plus++;
+            const w = item.weight || 0;
+            if (item.delayDays === 0) onTime += w;
+            else if (item.delayDays <= 3) d1to3 += w;
+            else if (item.delayDays <= 7) d3to7 += w;
+            else d7plus += w;
         });
         const severityData = [
-            { name: t.delayOnTime, value: onTime },
-            { name: t.delay1to3, value: d1to3 },
-            { name: t.delay3to7, value: d3to7 },
-            { name: t.delay7plus, value: d7plus }
+            { name: t.delayOnTime, value: Math.round(onTime) },
+            { name: t.delay1to3, value: Math.round(d1to3) },
+            { name: t.delay3to7, value: Math.round(d3to7) },
+            { name: t.delay7plus, value: Math.round(d7plus) }
         ].filter(d => d.value > 0);
 
         // High priority alerts
@@ -1063,52 +1118,56 @@ export default function App() {
     const sprintTrackingData = useMemo(() => {
         const tasksWithSprints = filteredData.filter(d => d.sprintCount > 0);
 
-        // Distribution
+        // Distribution (weighted)
         const distMap = {};
         tasksWithSprints.forEach(d => {
+            const w = d.weight || 0;
             const bucket = d.sprintCount >= 5 ? '5+' : String(d.sprintCount);
-            distMap[bucket] = (distMap[bucket] || 0) + 1;
+            distMap[bucket] = (distMap[bucket] || 0) + w;
         });
-        const distribution = ['1', '2', '3', '4', '5+'].map(k => ({ sprint: k, count: distMap[k] || 0 }));
+        const distribution = ['1', '2', '3', '4', '5+'].map(k => ({ sprint: k, count: Math.round(distMap[k] || 0) }));
 
-        // By person
+        // By person (weighted)
         const byPerson = {};
         filteredData.forEach(d => {
+            const w = d.weight || 0;
             if (!byPerson[d.assignee]) byPerson[d.assignee] = { total: 0, count: 0 };
-            byPerson[d.assignee].total += d.sprintCount || 0;
-            byPerson[d.assignee].count++;
+            byPerson[d.assignee].total += (d.sprintCount || 0) * w;
+            byPerson[d.assignee].count += w;
         });
         const personData = Object.entries(byPerson).map(([name, d]) => ({
-            assignee: name, avgSprint: parseFloat((d.total / d.count).toFixed(1))
+            assignee: name, avgSprint: d.count ? parseFloat((d.total / d.count).toFixed(1)) : 0
         })).sort((a, b) => b.avgSprint - a.avgSprint);
 
-        // By project
+        // By project (weighted)
         const byProject = {};
         filteredData.forEach(d => {
+            const w = d.weight || 0;
             if (!byProject[d.project]) byProject[d.project] = { total: 0, count: 0 };
-            byProject[d.project].total += d.sprintCount || 0;
-            byProject[d.project].count++;
+            byProject[d.project].total += (d.sprintCount || 0) * w;
+            byProject[d.project].count += w;
         });
         const projectData = Object.entries(byProject).map(([name, d]) => ({
-            project: name, avgSprint: parseFloat((d.total / d.count).toFixed(1))
+            project: name, avgSprint: d.count ? parseFloat((d.total / d.count).toFixed(1)) : 0
         })).sort((a, b) => b.avgSprint - a.avgSprint);
 
-        // Multi-sprint tasks
+        // Multi-sprint tasks (individual rows, no weighting)
         const multiSprint = filteredData
             .filter(d => d.sprintCount >= 3)
             .sort((a, b) => b.sprintCount - a.sprintCount)
             .slice(0, 30);
 
-        // Sprint vs Delay correlation
+        // Sprint vs Delay correlation (weighted)
         const sprintDelayMap = {};
         filteredData.forEach(d => {
+            const w = d.weight || 0;
             const bucket = d.sprintCount >= 5 ? '5+' : String(d.sprintCount || 0);
             if (!sprintDelayMap[bucket]) sprintDelayMap[bucket] = { totalDelay: 0, count: 0 };
-            sprintDelayMap[bucket].totalDelay += d.delayDays;
-            sprintDelayMap[bucket].count++;
+            sprintDelayMap[bucket].totalDelay += d.delayDays * w;
+            sprintDelayMap[bucket].count += w;
         });
         const sprintDelayData = ['0', '1', '2', '3', '4', '5+'].map(k => ({
-            sprint: k, avgDelay: sprintDelayMap[k] ? parseFloat((sprintDelayMap[k].totalDelay / sprintDelayMap[k].count).toFixed(1)) : 0, count: sprintDelayMap[k]?.count || 0
+            sprint: k, avgDelay: sprintDelayMap[k] && sprintDelayMap[k].count ? parseFloat((sprintDelayMap[k].totalDelay / sprintDelayMap[k].count).toFixed(1)) : 0, count: Math.round(sprintDelayMap[k]?.count || 0)
         })).filter(d => d.count > 0);
 
         return { distribution, personData, projectData, multiSprint, sprintDelayData, hasData: tasksWithSprints.length > 0 };
@@ -1281,7 +1340,7 @@ export default function App() {
                                         <td className={tdClass}><div className="truncate max-w-[250px]" title={epic.epicName}>{epic.epicName}</div></td>
                                         <td className={tdClass}>
                                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                epic.epicStatus === 'Done' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                isDone(epic.epicStatus) ? 'bg-emerald-500/20 text-emerald-400' :
                                                 epic.epicStatus === 'In Progress' ? 'bg-blue-500/20 text-blue-400' :
                                                 dark ? 'bg-slate-600 text-slate-300' : 'bg-slate-100 text-slate-600'
                                             }`}>{epic.epicStatus}</span>
@@ -1926,11 +1985,26 @@ export default function App() {
                 </div>
             )}
 
-            {/* Data Table */}
+            {/* Data Table - show only parent tasks and standalone tasks (no subtasks) */}
+            {(() => {
+                const tableData = filteredData.filter(d => !d.parent);
+                // Build subtask info for parent tasks
+                const subtaskInfoMap = {};
+                filteredData.forEach(d => {
+                    if (d.parent) {
+                        if (!subtaskInfoMap[d.parent]) subtaskInfoMap[d.parent] = { total: 0, done: 0, totalDevTime: 0, totalDelay: 0, delayedCount: 0 };
+                        const s = subtaskInfoMap[d.parent];
+                        s.total++;
+                        if (isDone(d.status)) s.done++;
+                        s.totalDevTime += d.devTime;
+                        if (d.delayDays > 0) { s.totalDelay += d.delayDays; s.delayedCount++; }
+                    }
+                });
+                return (
             <div className={`${panel} overflow-hidden`}>
                 <div className={`p-6 border-b flex justify-between items-center ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
                     <h3 className={`text-lg font-bold ${dark ? 'text-white' : 'text-slate-800'}`}>{t.taskDetails}</h3>
-                    <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.showing} {Math.min(filteredData.filter(d => d.issueType !== 'Epic').length, 50)} {t.of} {filteredData.filter(d => d.issueType !== 'Epic').length} {t.items}</span>
+                    <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.showing} {Math.min(tableData.length, 50)} {t.of} {tableData.length} {t.items}</span>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
@@ -1942,6 +2016,7 @@ export default function App() {
                                 <th className={`${thClass} py-4`}>{t.epicCol}</th>
                                 <th className={`${thClass} py-4`}>{t.assignee}</th>
                                 <th className={`${thClass} py-4`}>{t.status}</th>
+                                <th className={`${thClass} py-4`}>{t.progress}</th>
                                 <th className={`${thClass} py-4`}>{t.dueDate}</th>
                                 <th className={`${thClass} py-4`}>{t.endDate}</th>
                                 <th className={`${thClass} py-4 text-center`}>{t.devDays}</th>
@@ -1949,7 +2024,13 @@ export default function App() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredData.filter(d => d.issueType !== 'Epic').slice(0, 50).map((item, index) => (
+                            {tableData.slice(0, 50).map((item, index) => {
+                                const subInfo = subtaskInfoMap[item.id];
+                                const hasSubtasks = !!subInfo;
+                                const subProgress = hasSubtasks ? Math.round((subInfo.done / subInfo.total) * 100) : null;
+                                const aggDevTime = hasSubtasks && subInfo.total ? parseFloat((subInfo.totalDevTime / subInfo.total).toFixed(1)) : item.devTime;
+                                const aggDelay = hasSubtasks && subInfo.total ? parseFloat((subInfo.totalDelay / subInfo.total).toFixed(1)) : item.delayDays;
+                                return (
                                 <tr key={index} className={`border-b transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
                                     <td className={`${tdClass} font-medium`}>
                                         <a href={`${JIRA_BASE}/${item.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-400 hover:underline">{item.id}</a>
@@ -1975,26 +2056,41 @@ export default function App() {
                                     </td>
                                     <td className={tdClass}>
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                            item.status.toLowerCase() === 'done' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'
+                                            isDone(item.status) ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'
                                         }`}>{item.status}</span>
+                                    </td>
+                                    <td className={tdClass}>
+                                        {hasSubtasks ? (
+                                            <div className="flex items-center gap-2 min-w-[100px]">
+                                                <div className={`flex-1 h-2 rounded-full ${dark ? 'bg-slate-600' : 'bg-slate-200'}`}>
+                                                    <div className={`h-2 rounded-full ${subProgress === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${subProgress}%` }}></div>
+                                                </div>
+                                                <span className="text-xs font-medium whitespace-nowrap">{subInfo.done}/{subInfo.total}</span>
+                                            </div>
+                                        ) : (
+                                            <span className={`text-xs ${dark ? 'text-slate-600' : 'text-slate-300'}`}>-</span>
+                                        )}
                                     </td>
                                     <td className={tdClass}>{formatDate(item.dueDate, lang)}</td>
                                     <td className={tdClass}>{formatDate(item.endDate, lang)}</td>
-                                    <td className={`${tdClass} text-center`}>{item.devTime}</td>
+                                    <td className={`${tdClass} text-center`}>{hasSubtasks ? aggDevTime : item.devTime}</td>
                                     <td className={`${tdClass} text-center`}>
-                                        {item.delayDays > 0 ? <span className="text-rose-500 font-bold">+{item.delayDays}</span> : <span className="text-emerald-500">-</span>}
+                                        {(hasSubtasks ? aggDelay : item.delayDays) > 0 ? <span className="text-rose-500 font-bold">+{hasSubtasks ? aggDelay : item.delayDays}</span> : <span className="text-emerald-500">-</span>}
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
-                {filteredData.filter(d => d.issueType !== 'Epic').length > 50 && (
+                {tableData.length > 50 && (
                     <div className={`p-4 text-center text-sm border-t ${dark ? 'text-slate-500 bg-slate-800/50 border-slate-700' : 'text-slate-500 bg-slate-50 border-slate-200'}`}>
-                        {t.showingFirst50} {filteredData.filter(d => d.issueType !== 'Epic').length} {t.items}
+                        {t.showingFirst50} {tableData.length} {t.items}
                     </div>
                 )}
             </div>
+                );
+            })()}
         </div>
     );
 }
