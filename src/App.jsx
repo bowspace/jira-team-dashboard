@@ -3,12 +3,30 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, ComposedChart, Line, ReferenceLine, ScatterChart, Scatter, LineChart
 } from 'recharts';
-import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, ChevronUp, ArrowUpDown, X, Target, Bug, TrendingUp, Shield, Zap, Info } from 'lucide-react';
+import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, ChevronUp, ArrowUpDown, X, Target, Bug, TrendingUp, Shield, Zap, Info, PanelLeftClose, PanelLeftOpen, Headphones } from 'lucide-react';
+import SupportDashboard from './SupportDashboard';
 
 // --- Helper: check if status counts as "done" ---
 const isDone = (status) => {
     const s = (status || '').toLowerCase();
     return s === 'done' || s === "won't fix" || s === 'wont fix';
+};
+
+// --- Status group mapping for filter ---
+const STATUS_GROUPS = [
+    { group: 'Done', statuses: ['done', "won't fix", 'wont fix'] },
+    { group: 'To Do', statuses: ['backlog', 'to do'] },
+    { group: 'QA In Progress', statuses: ['deployed to dev', 'deployed to stag', 'approved by qa'] },
+    { group: 'Wait for PROD', statuses: ['approved by qa', 'approved on prod', 'deployed to prod'] },
+    { group: 'In Progress', statuses: [] }, // catch-all for everything else
+];
+const STATUS_GROUP_NAMES = STATUS_GROUPS.map(g => g.group);
+const getStatusGroup = (status) => {
+    const s = (status || '').toLowerCase();
+    for (const g of STATUS_GROUPS) {
+        if (g.statuses.length > 0 && g.statuses.includes(s)) return g.group;
+    }
+    return 'In Progress'; // default catch-all
 };
 
 // --- Multi-select dropdown component ---
@@ -122,6 +140,8 @@ const translations = {
     th: {
         title: 'IT Team Performance Dashboard',
         subtitle: 'วิเคราะห์ระยะเวลาการพัฒนาและ Performance ของทีม (อ้างอิง Jira Task)',
+        supportTitle: 'Platform Support Dashboard',
+        supportSubtitle: 'วิเคราะห์ข้อมูล Support Ticket จากแพลตฟอร์ม',
         loading: 'กำลังโหลดข้อมูล Jira Task...',
         dataSource: 'แหล่งข้อมูล',
         filters: 'ตัวกรอง',
@@ -134,6 +154,7 @@ const translations = {
         allReporters: 'ผู้แจ้งทั้งหมด',
         allVersions: 'ทุกเวอร์ชั่น',
         allEpics: 'ทุก Epic',
+        allStatuses: 'ทุกสถานะ',
         clearFilters: 'ล้างตัวกรอง',
         totalTasks: 'จำนวนงานทั้งหมด',
         tasks: 'งาน',
@@ -234,6 +255,8 @@ const translations = {
     en: {
         title: 'IT Team Performance Dashboard',
         subtitle: 'Analyze development time and team performance (based on Jira Tasks)',
+        supportTitle: 'Platform Support Dashboard',
+        supportSubtitle: 'Analyze support ticket data from platforms',
         loading: 'Loading Jira Task data...',
         dataSource: 'Data Source',
         filters: 'Filters',
@@ -246,6 +269,7 @@ const translations = {
         allReporters: 'All Reporters',
         allVersions: 'All Versions',
         allEpics: 'All Epics',
+        allStatuses: 'All Statuses',
         clearFilters: 'Clear filters',
         totalTasks: 'Total Tasks',
         tasks: 'tasks',
@@ -341,6 +365,8 @@ const translations = {
     zh: {
         title: 'IT团队绩效仪表板',
         subtitle: '分析开发时间和团队绩效（基于 Jira 任务）',
+        supportTitle: '平台支持仪表板',
+        supportSubtitle: '分析平台支持工单数据',
         loading: '正在加载 Jira 任务数据...',
         dataSource: '数据源',
         filters: '筛选',
@@ -353,6 +379,7 @@ const translations = {
         allReporters: '所有报告人',
         allVersions: '所有版本',
         allEpics: '所有 Epic',
+        allStatuses: '所有状态',
         clearFilters: '清除筛选',
         totalTasks: '任务总数',
         tasks: '个任务',
@@ -579,6 +606,25 @@ const chartTheme = (dark) => ({
 export default function App() {
     const [lang, setLang] = useState(() => localStorage.getItem('dashboard-lang') || 'th');
     const [dark, setDark] = useState(() => localStorage.getItem('dashboard-dark') === 'true');
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('dashboard-sidebar') === 'collapsed');
+    const getPageFromPath = () => window.location.pathname === '/support' ? 'support' : 'jira';
+    const [activePage, setActivePageState] = useState(getPageFromPath);
+    const setActivePage = (page) => {
+        const path = page === 'support' ? '/support' : '/';
+        window.history.pushState({}, '', path);
+        setActivePageState(page);
+    };
+    useEffect(() => {
+        const onPop = () => setActivePageState(getPageFromPath());
+        window.addEventListener('popstate', onPop);
+        return () => window.removeEventListener('popstate', onPop);
+    }, []);
+    const toggleSidebar = () => {
+        setSidebarCollapsed(prev => {
+            localStorage.setItem('dashboard-sidebar', !prev ? 'collapsed' : 'expanded');
+            return !prev;
+        });
+    };
     const t = translations[lang];
     const ct = chartTheme(dark);
 
@@ -594,6 +640,7 @@ export default function App() {
     const [filters, setFilters] = useState({
         dateType: 'quarter',
         dateValues: [],   // empty = all
+        statusGroups: [],
         assignees: [],
         reporters: [],
         projects: [],
@@ -820,7 +867,7 @@ export default function App() {
             if (item.week && item.week !== '-') opts.weeks.add(item.week);
             if (item.month && item.month !== '-') opts.months.add(item.month);
             if (item.quarter && item.quarter !== '-') opts.quarters.add(item.quarter);
-            if (item.assignee && item.assignee !== 'Unassigned') opts.assignees.add(item.assignee);
+            if (item.assignee) opts.assignees.add(item.assignee);
             if (item.reporter && item.reporter !== 'Unknown') opts.reporters.add(item.reporter);
             if (item.project && item.project !== 'Unknown') opts.projects.add(item.project);
             if (item.fixVersion && item.fixVersion !== 'N/A') opts.fixVersions.add(item.fixVersion);
@@ -845,6 +892,7 @@ export default function App() {
                 const dateField = filters.dateType === 'weekly' ? item.week : filters.dateType === 'monthly' ? item.month : item.quarter;
                 if (!filters.dateValues.includes(dateField)) return false;
             }
+            if (filters.statusGroups.length > 0 && !filters.statusGroups.includes(getStatusGroup(item.status))) return false;
             if (filters.assignees.length > 0 && !filters.assignees.includes(item.assignee)) return false;
             if (filters.reporters.length > 0 && !filters.reporters.includes(item.reporter)) return false;
             if (filters.projects.length > 0 && !filters.projects.includes(item.project)) return false;
@@ -951,17 +999,48 @@ export default function App() {
         bugs.forEach(b => { const w = b.weight || 0; bugWeight += w; if (b.devTime <= 1) onTimeBugWeight += w; });
         const bugFixRate = bugWeight ? (onTimeBugWeight / bugWeight) * 100 : 100;
 
-        // Q-over-Q efficiency (weighted)
-        const quarters = [...new Set(filteredData.map(d => d.quarter).filter(q => q !== '-'))].sort();
+        // Period-over-period efficiency (weighted) - depends on filter selection
         let efficiencyImprovement = null;
-        if (quarters.length >= 2) {
-            const currQ = quarters[quarters.length - 1];
-            const prevQ = quarters[quarters.length - 2];
+        const { currPeriod, prevPeriod, periodField } = (() => {
+            const dv = filters.dateValues;
+            if (dv.length > 2) return {}; // 3+ selected = no calculation
+            if (dv.length === 2) {
+                // Compare earlier vs later of the 2 selected
+                const sorted = [...dv].sort();
+                const field = filters.dateType === 'weekly' ? 'week' : filters.dateType === 'monthly' ? 'month' : 'quarter';
+                return { prevPeriod: sorted[0], currPeriod: sorted[1], periodField: field };
+            }
+            if (dv.length === 1) {
+                // Compare selected vs its predecessor
+                const field = filters.dateType === 'weekly' ? 'week' : filters.dateType === 'monthly' ? 'month' : 'quarter';
+                const allPeriods = (field === 'week' ? filterOptions.weeks : field === 'month' ? filterOptions.months : filterOptions.quarters);
+                const idx = allPeriods.indexOf(dv[0]);
+                if (idx > 0) return { prevPeriod: allPeriods[idx - 1], currPeriod: dv[0], periodField: field };
+                return {};
+            }
+            // No date selected (All) - default prev Q vs current Q
+            const quarters = [...new Set(filteredData.map(d => d.quarter).filter(q => q !== '-'))].sort();
+            if (quarters.length >= 2) return { prevPeriod: quarters[quarters.length - 2], currPeriod: quarters[quarters.length - 1], periodField: 'quarter' };
+            return {};
+        })();
+        if (currPeriod && prevPeriod && periodField) {
             let currDevSum = 0, currW = 0, prevDevSum = 0, prevW = 0;
-            filteredData.forEach(d => {
+            // Use full data for prev period (it may be outside current filter)
+            const nonEpicData = data.filter(d => d.issueType !== 'Epic');
+            const applyNonDateFilters = (d) => {
+                if (filters.statusGroups.length > 0 && !filters.statusGroups.includes(getStatusGroup(d.status))) return false;
+                if (filters.assignees.length > 0 && !filters.assignees.includes(d.assignee)) return false;
+                if (filters.reporters.length > 0 && !filters.reporters.includes(d.reporter)) return false;
+                if (filters.projects.length > 0 && !filters.projects.includes(d.project)) return false;
+                if (filters.fixVersions.length > 0 && !filters.fixVersions.includes(d.fixVersion)) return false;
+                if (filters.epicLinks.length > 0 && !filters.epicLinks.includes(d.epicLink)) return false;
+                return true;
+            };
+            nonEpicData.forEach(d => {
+                if (!applyNonDateFilters(d)) return;
                 const w = d.weight || 0;
-                if (d.quarter === currQ) { currDevSum += d.devTime * w; currW += w; }
-                if (d.quarter === prevQ) { prevDevSum += d.devTime * w; prevW += w; }
+                if (d[periodField] === currPeriod) { currDevSum += d.devTime * w; currW += w; }
+                if (d[periodField] === prevPeriod) { prevDevSum += d.devTime * w; prevW += w; }
             });
             const currAvg = currW ? currDevSum / currW : 0;
             const prevAvg = prevW ? prevDevSum / prevW : 0;
@@ -969,15 +1048,33 @@ export default function App() {
         }
 
         return { onTimeRate, bugFixRate, efficiencyImprovement, bugTotal: Math.round(bugWeight), bugOnTime: Math.round(onTimeBugWeight) };
-    }, [filteredData]);
+    }, [filteredData, data, filters, filterOptions]);
 
     // --- Individual KPI Table ---
     const individualKPI = useMemo(() => {
         const byPerson = {};
-        const quarters = [...new Set(filteredData.map(d => d.quarter).filter(q => q !== '-'))].sort();
-        const currQ = quarters.length >= 1 ? quarters[quarters.length - 1] : null;
-        const prevQ = quarters.length >= 2 ? quarters[quarters.length - 2] : null;
 
+        // Determine comparison periods (same logic as kpiMetrics)
+        const dv = filters.dateValues;
+        let compCurr = null, compPrev = null, compField = null;
+        if (dv.length > 2) {
+            // 3+ selected = no improvement calculation
+        } else if (dv.length === 2) {
+            const sorted = [...dv].sort();
+            compField = filters.dateType === 'weekly' ? 'week' : filters.dateType === 'monthly' ? 'month' : 'quarter';
+            compPrev = sorted[0]; compCurr = sorted[1];
+        } else if (dv.length === 1) {
+            compField = filters.dateType === 'weekly' ? 'week' : filters.dateType === 'monthly' ? 'month' : 'quarter';
+            const allPeriods = (compField === 'week' ? filterOptions.weeks : compField === 'month' ? filterOptions.months : filterOptions.quarters);
+            const idx = allPeriods.indexOf(dv[0]);
+            if (idx > 0) { compPrev = allPeriods[idx - 1]; compCurr = dv[0]; }
+        } else {
+            // All - default prev Q vs current Q
+            const quarters = [...new Set(filteredData.map(d => d.quarter).filter(q => q !== '-'))].sort();
+            if (quarters.length >= 2) { compField = 'quarter'; compPrev = quarters[quarters.length - 2]; compCurr = quarters[quarters.length - 1]; }
+        }
+
+        // Build per-person stats from filteredData
         filteredData.forEach(item => {
             const w = item.weight || 0;
             if (!byPerson[item.assignee]) byPerson[item.assignee] = { totalW: 0, delayedW: 0, bugW: 0, bugOnTimeW: 0, sprintSum: 0, currDevSum: 0, currW: 0, prevDevSum: 0, prevW: 0 };
@@ -986,9 +1083,30 @@ export default function App() {
             if (item.delayDays > 0) p.delayedW += w;
             if (item.issueType === 'Bug') { p.bugW += w; if (item.devTime <= 1) p.bugOnTimeW += w; }
             p.sprintSum += (item.sprintCount || 0) * w;
-            if (currQ && item.quarter === currQ) { p.currDevSum += item.devTime * w; p.currW += w; }
-            if (prevQ && item.quarter === prevQ) { p.prevDevSum += item.devTime * w; p.prevW += w; }
+            if (compCurr && compField && item[compField] === compCurr) { p.currDevSum += item.devTime * w; p.currW += w; }
         });
+
+        // Prev period data may be outside filter - use full data with non-date filters
+        if (compPrev && compField) {
+            const applyNonDateFilters = (d) => {
+                if (d.issueType === 'Epic') return false;
+                if (filters.statusGroups.length > 0 && !filters.statusGroups.includes(getStatusGroup(d.status))) return false;
+                if (filters.assignees.length > 0 && !filters.assignees.includes(d.assignee)) return false;
+                if (filters.reporters.length > 0 && !filters.reporters.includes(d.reporter)) return false;
+                if (filters.projects.length > 0 && !filters.projects.includes(d.project)) return false;
+                if (filters.fixVersions.length > 0 && !filters.fixVersions.includes(d.fixVersion)) return false;
+                if (filters.epicLinks.length > 0 && !filters.epicLinks.includes(d.epicLink)) return false;
+                return true;
+            };
+            data.forEach(item => {
+                if (!applyNonDateFilters(item)) return;
+                if (item[compField] !== compPrev) return;
+                const w = item.weight || 0;
+                if (!byPerson[item.assignee]) byPerson[item.assignee] = { totalW: 0, delayedW: 0, bugW: 0, bugOnTimeW: 0, sprintSum: 0, currDevSum: 0, currW: 0, prevDevSum: 0, prevW: 0 };
+                byPerson[item.assignee].prevDevSum += item.devTime * w;
+                byPerson[item.assignee].prevW += w;
+            });
+        }
 
         return Object.entries(byPerson).map(([name, d]) => {
             const total = d.totalW;
@@ -1000,7 +1118,7 @@ export default function App() {
             const prevAvg = d.prevW ? d.prevDevSum / d.prevW : null;
             let devImprovement = null;
             let efficiencyScore = 0;
-            if (prevAvg !== null && prevAvg > 0 && currAvg !== null) {
+            if (compCurr && compPrev && prevAvg !== null && prevAvg > 0 && currAvg !== null) {
                 devImprovement = ((prevAvg - currAvg) / prevAvg) * 100;
                 efficiencyScore = Math.min(devImprovement / 15, 1.0);
                 if (efficiencyScore < 0) efficiencyScore = 0;
@@ -1012,7 +1130,7 @@ export default function App() {
 
             return { name, total: Math.round(total), onTimeRate, devImprovement, bugFixRate, bugTotal: Math.round(d.bugW), avgSprint, weightedScore, currAvg, prevAvg };
         }).sort((a, b) => b.weightedScore - a.weightedScore);
-    }, [filteredData]);
+    }, [filteredData, data, filters, filterOptions]);
 
     // --- Bug Analysis ---
     const bugAnalysisData = useMemo(() => {
@@ -1192,8 +1310,8 @@ export default function App() {
 
     const dateOptions = filters.dateType === 'weekly' ? filterOptions.weeks : filters.dateType === 'monthly' ? filterOptions.months : filterOptions.quarters;
 
-    const resetFilters = () => setFilters({ dateType: 'quarter', dateValues: [], assignees: [], reporters: [], projects: [], fixVersions: [], epicLinks: [] });
-    const hasActiveFilters = filters.dateValues.length > 0 || filters.assignees.length > 0 || filters.reporters.length > 0 || filters.projects.length > 0 || filters.fixVersions.length > 0 || filters.epicLinks.length > 0;
+    const resetFilters = () => setFilters({ dateType: 'quarter', dateValues: [], statusGroups: [], assignees: [], reporters: [], projects: [], fixVersions: [], epicLinks: [] });
+    const hasActiveFilters = filters.dateValues.length > 0 || filters.statusGroups.length > 0 || filters.assignees.length > 0 || filters.reporters.length > 0 || filters.projects.length > 0 || filters.fixVersions.length > 0 || filters.epicLinks.length > 0;
 
     if (loading) {
         return <div className={`flex h-screen items-center justify-center ${dark ? 'bg-slate-900 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>{t.loading}</div>;
@@ -1206,8 +1324,99 @@ export default function App() {
     const thClass = `px-4 py-3 font-semibold ${dark ? 'text-slate-300' : 'text-slate-700'}`;
     const tdClass = `px-4 py-3 ${dark ? 'text-slate-300' : 'text-slate-600'}`;
 
+    const SIDEBAR_ITEMS = [
+        { key: 'jira', label: 'Jira Performance', icon: Activity, path: '/' },
+        { key: 'support', label: 'IT Support', icon: Headphones, path: '/support' },
+    ];
+
     return (
-        <div className={`min-h-screen p-6 font-sans transition-colors ${dark ? 'dark bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
+        <div className={`min-h-screen flex font-sans transition-colors ${dark ? 'dark bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
+            {/* Sidebar */}
+            <aside className={`sticky top-0 h-screen flex flex-col border-r transition-all duration-300 ${
+                sidebarCollapsed ? 'w-16' : 'w-56'
+            } ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                {/* Sidebar header */}
+                <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between px-4'} h-14 border-b ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
+                    {!sidebarCollapsed && (
+                        <span className={`text-sm font-bold truncate ${dark ? 'text-white' : 'text-slate-900'}`}>Dashboard</span>
+                    )}
+                    <button
+                        onClick={toggleSidebar}
+                        className={`p-1.5 rounded-md transition-colors ${dark ? 'text-slate-400 hover:bg-slate-700 hover:text-slate-200' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
+                        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    >
+                        {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+                    </button>
+                </div>
+
+                {/* Nav items */}
+                <nav className="flex-1 py-3 flex flex-col gap-1 px-2">
+                    {SIDEBAR_ITEMS.map(item => {
+                        const isActive = activePage === item.key;
+                        const Icon = item.icon;
+                        return (
+                            <button
+                                key={item.key}
+                                onClick={() => setActivePage(item.key)}
+                                title={sidebarCollapsed ? item.label : undefined}
+                                className={`flex items-center gap-3 rounded-lg transition-colors ${
+                                    sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'
+                                } ${isActive
+                                    ? dark ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-50 text-blue-700'
+                                    : dark ? 'text-slate-400 hover:bg-slate-700 hover:text-slate-200' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                                }`}
+                            >
+                                <Icon size={20} className={isActive ? (dark ? 'text-blue-400' : 'text-blue-600') : ''} />
+                                {!sidebarCollapsed && (
+                                    <span className="text-sm font-medium truncate">{item.label}</span>
+                                )}
+                                {!sidebarCollapsed && isActive && (
+                                    <span className={`ml-auto w-1.5 h-1.5 rounded-full ${dark ? 'bg-blue-400' : 'bg-blue-600'}`}></span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </nav>
+
+                {/* Sidebar footer — dark mode + lang */}
+                <div className={`border-t py-3 px-2 flex flex-col gap-2 ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
+                    <button
+                        onClick={toggleDark}
+                        title={sidebarCollapsed ? (dark ? 'Light mode' : 'Dark mode') : undefined}
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
+                            sidebarCollapsed ? 'justify-center px-0' : ''
+                        } ${dark ? 'text-yellow-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                    >
+                        {dark ? <Sun size={20} /> : <Moon size={20} />}
+                        {!sidebarCollapsed && <span className="text-sm">{dark ? 'Light Mode' : 'Dark Mode'}</span>}
+                    </button>
+                    {!sidebarCollapsed && (
+                        <div className="flex items-center gap-1 px-1">
+                            {LANG_OPTIONS.map(lo => (
+                                <button
+                                    key={lo.code}
+                                    onClick={() => switchLang(lo.code)}
+                                    className={`flex-1 px-1.5 py-1 text-xs rounded-md transition-colors flex items-center justify-center gap-1 ${
+                                        lang === lo.code
+                                            ? 'bg-blue-600 text-white shadow-sm'
+                                            : dark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'
+                                    }`}
+                                >
+                                    <span>{lo.flag}</span> {lo.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </aside>
+
+            {/* Main content */}
+            <main className="flex-1 min-w-0">
+            <div className="p-6">
+            {activePage === 'support' && <SupportDashboard dark={dark} lang={lang} />}
+
+            {activePage === 'jira' && (
+            <>
             {/* Sticky Header + Filters */}
             <div className={`sticky top-0 z-50 -mx-6 px-6 pt-2 pb-4 ${dark ? 'bg-slate-900/95 backdrop-blur-sm' : 'bg-slate-50/95 backdrop-blur-sm'}`}>
             {/* Header */}
@@ -1220,29 +1429,6 @@ export default function App() {
                     <p className={`mt-1 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.subtitle}</p>
                 </div>
                 <div className="mt-4 md:mt-0 flex items-center gap-3">
-                    {/* Dark mode toggle */}
-                    <button
-                        onClick={toggleDark}
-                        className={`p-2 rounded-lg border shadow-sm transition-colors ${dark ? 'bg-slate-800 border-slate-700 text-yellow-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`}
-                    >
-                        {dark ? <Sun size={20} /> : <Moon size={20} />}
-                    </button>
-                    {/* Language Switcher */}
-                    <div className={`flex items-center gap-1 rounded-lg p-0.5 border shadow-sm ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                        {LANG_OPTIONS.map(lo => (
-                            <button
-                                key={lo.code}
-                                onClick={() => switchLang(lo.code)}
-                                className={`px-2.5 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 ${
-                                    lang === lo.code
-                                        ? 'bg-blue-600 text-white shadow-sm'
-                                        : dark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'
-                                }`}
-                            >
-                                <span>{lo.flag}</span> {lo.label}
-                            </button>
-                        ))}
-                    </div>
                     {/* Refresh */}
                     <button
                         onClick={() => loadData(false)}
@@ -1293,6 +1479,7 @@ export default function App() {
                 </div>
 
                 <MultiSelect options={dateOptions} selected={filters.dateValues} onChange={(v) => setFilters(prev => ({ ...prev, dateValues: v }))} label={t.all} dark={dark} />
+                <MultiSelect options={STATUS_GROUP_NAMES} selected={filters.statusGroups} onChange={(v) => setFilters(prev => ({ ...prev, statusGroups: v }))} label={t.allStatuses} dark={dark} />
                 <MultiSelect options={filterOptions.projects} selected={filters.projects} onChange={(v) => setFilters(prev => ({ ...prev, projects: v }))} label={t.allProjects} dark={dark} />
                 <MultiSelect options={filterOptions.assignees} selected={filters.assignees} onChange={(v) => setFilters(prev => ({ ...prev, assignees: v }))} label={t.allAssignees} dark={dark} />
                 <MultiSelect options={filterOptions.reporters} selected={filters.reporters} onChange={(v) => setFilters(prev => ({ ...prev, reporters: v }))} label={t.allReporters} dark={dark} />
@@ -2218,6 +2405,9 @@ export default function App() {
             </div>
                 );
             })()}
+            </>)}
+        </div>
+        </main>
         </div>
     );
 }
