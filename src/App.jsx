@@ -536,7 +536,7 @@ const parseDateStr = (dateStr) => {
     return new Date(trimmed);
 };
 
-const SHEET_ID = '1ZeJOK6BkHtVX97CDSFcWqODJzBqVmRXx6UO0Q9QbDLk';
+const SHEET_ID = import.meta.env.VITE_DB_LINK || '1ZeJOK6BkHtVX97CDSFcWqODJzBqVmRXx6UO0Q9QbDLk';
 const JIRA_BASE = 'https://jira2.my-group.net/browse';
 
 const fetchSheet = async (sheetName) => {
