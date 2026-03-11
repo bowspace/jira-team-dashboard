@@ -3,7 +3,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, ComposedChart, Line, ReferenceLine, ScatterChart, Scatter, LineChart
 } from 'recharts';
-import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, X, Target, Bug, TrendingUp, Shield, Zap, Info } from 'lucide-react';
+import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, ChevronUp, ArrowUpDown, X, Target, Bug, TrendingUp, Shield, Zap, Info } from 'lucide-react';
 
 // --- Helper: check if status counts as "done" ---
 const isDone = (status) => {
@@ -601,6 +601,23 @@ export default function App() {
         epicLinks: []
     });
 
+    const [tableSort, setTableSort] = useState({ key: null, dir: 'desc' });
+    const [epicSort, setEpicSort] = useState({ key: null, dir: 'desc' });
+    const [kpiSort, setKpiSort] = useState({ key: null, dir: 'desc' });
+    const [alertSort, setAlertSort] = useState({ key: null, dir: 'desc' });
+    const toggleSort = (key) => setTableSort(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
+    const toggleEpicSort = (key) => setEpicSort(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
+    const toggleKpiSort = (key) => setKpiSort(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
+    const toggleAlertSort = (key) => setAlertSort(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
+    const sortData = (data, sortState, getVal) => {
+        if (!sortState.key) return data;
+        return [...data].sort((a, b) => {
+            const va = getVal(a, sortState.key), vb = getVal(b, sortState.key);
+            const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+            return sortState.dir === 'asc' ? cmp : -cmp;
+        });
+    };
+
     const switchLang = (code) => {
         setLang(code);
         localStorage.setItem('dashboard-lang', code);
@@ -1191,8 +1208,10 @@ export default function App() {
 
     return (
         <div className={`min-h-screen p-6 font-sans transition-colors ${dark ? 'dark bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
+            {/* Sticky Header + Filters */}
+            <div className={`sticky top-0 z-50 -mx-6 px-6 pt-2 pb-4 ${dark ? 'bg-slate-900/95 backdrop-blur-sm' : 'bg-slate-50/95 backdrop-blur-sm'}`}>
             {/* Header */}
-            <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center">
+            <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center">
                 <div>
                     <h1 className={`text-3xl font-bold flex items-center gap-3 ${dark ? 'text-white' : 'text-slate-900'}`}>
                         <Activity className="text-blue-500" size={32} />
@@ -1247,7 +1266,7 @@ export default function App() {
             </div>
 
             {/* Filters Bar */}
-            <div className={`${panel} p-4 mb-8 flex flex-wrap gap-3 items-center`}>
+            <div className={`${panel} p-4 flex flex-wrap gap-3 items-center`}>
                 <div className={`flex items-center gap-2 font-medium mr-1 ${dark ? 'text-slate-400' : 'text-slate-600'}`}>
                     <Filter size={20} />
                     {t.filters}:
@@ -1286,6 +1305,7 @@ export default function App() {
                     </button>
                 )}
             </div>
+            </div>
 
             {/* KPIs Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -1316,23 +1336,48 @@ export default function App() {
                         </h3>
                     </div>
                     <div className="overflow-x-auto">
+                        {(() => {
+                            const EpicSortHeader = ({ sortKey, label, className = '' }) => (
+                                <th className={`${thClass} cursor-pointer select-none hover:text-blue-400 transition-colors ${className}`} onClick={() => toggleEpicSort(sortKey)}>
+                                    <div className={`flex items-center gap-1 ${className.includes('text-center') ? 'justify-center' : ''}`}>
+                                        {label}
+                                        {epicSort.key === sortKey ? (epicSort.dir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : <ArrowUpDown size={12} className="opacity-30" />}
+                                    </div>
+                                </th>
+                            );
+                            const sortedEpics = sortData(epicSummary, epicSort, (item, key) => {
+                                switch (key) {
+                                    case 'epicKey': return item.epicKey;
+                                    case 'epicName': return item.epicName;
+                                    case 'status': return item.epicStatus;
+                                    case 'total': return item.total;
+                                    case 'done': return item.done;
+                                    case 'progress': return item.progress;
+                                    case 'onTime': return item.onTimeRate;
+                                    case 'avgDev': return item.avgDevTime;
+                                    case 'avgDelay': return item.avgDelay;
+                                    case 'targetEnd': return item.epicTargetEnd ? parseDateStr(item.epicTargetEnd)?.getTime() || 0 : 0;
+                                    default: return 0;
+                                }
+                            });
+                            return (
                         <table className="w-full text-sm text-left">
                             <thead className={`text-xs uppercase ${dark ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-50 text-slate-700'}`}>
                                 <tr>
-                                    <th className={thClass}>{t.epicCol}</th>
-                                    <th className={thClass}>{t.epicName}</th>
-                                    <th className={thClass}>{t.status}</th>
-                                    <th className={`${thClass} text-center`}>{t.totalTasksCol}</th>
-                                    <th className={`${thClass} text-center`}>{t.completed}</th>
-                                    <th className={`${thClass} text-center`}>{t.progress}</th>
-                                    <th className={`${thClass} text-center`}>{t.onTime}</th>
-                                    <th className={`${thClass} text-center`}>{t.avgDevDays}</th>
-                                    <th className={`${thClass} text-center`}>{t.avgDelayDays}</th>
-                                    <th className={thClass}>{t.targetEnd}</th>
+                                    <EpicSortHeader sortKey="epicKey" label={t.epicCol} />
+                                    <EpicSortHeader sortKey="epicName" label={t.epicName} />
+                                    <EpicSortHeader sortKey="status" label={t.status} />
+                                    <EpicSortHeader sortKey="total" label={t.totalTasksCol} className="text-center" />
+                                    <EpicSortHeader sortKey="done" label={t.completed} className="text-center" />
+                                    <EpicSortHeader sortKey="progress" label={t.progress} className="text-center" />
+                                    <EpicSortHeader sortKey="onTime" label={t.onTime} className="text-center" />
+                                    <EpicSortHeader sortKey="avgDev" label={t.avgDevDays} className="text-center" />
+                                    <EpicSortHeader sortKey="avgDelay" label={t.avgDelayDays} className="text-center" />
+                                    <EpicSortHeader sortKey="targetEnd" label={t.targetEnd} />
                                 </tr>
                             </thead>
                             <tbody>
-                                {epicSummary.map((epic) => (
+                                {sortedEpics.map((epic) => (
                                     <tr key={epic.epicKey} className={`border-b transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
                                         <td className={`${tdClass} font-medium`}>
                                             <a href={`${JIRA_BASE}/${epic.epicKey}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-400 hover:underline">{epic.epicKey}</a>
@@ -1363,6 +1408,8 @@ export default function App() {
                                 ))}
                             </tbody>
                         </table>
+                            );
+                        })()}
                     </div>
                 </div>
             )}
@@ -1539,20 +1586,42 @@ export default function App() {
                     ]} />
                 </div>
                 <div className="overflow-x-auto">
+                    {(() => {
+                        const KpiSortHeader = ({ sortKey, label, className = '' }) => (
+                            <th className={`${thClass} cursor-pointer select-none hover:text-blue-400 transition-colors ${className}`} onClick={() => toggleKpiSort(sortKey)}>
+                                <div className={`flex items-center gap-1 ${className.includes('text-center') ? 'justify-center' : ''}`}>
+                                    {label}
+                                    {kpiSort.key === sortKey ? (kpiSort.dir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : <ArrowUpDown size={12} className="opacity-30" />}
+                                </div>
+                            </th>
+                        );
+                        const sortedKpi = sortData(individualKPI, kpiSort, (item, key) => {
+                            switch (key) {
+                                case 'name': return item.name;
+                                case 'total': return item.total;
+                                case 'onTimeRate': return item.onTimeRate;
+                                case 'devImprovement': return item.devImprovement ?? -999;
+                                case 'bugFixRate': return item.bugTotal > 0 ? item.bugFixRate : -999;
+                                case 'avgSprint': return item.avgSprint;
+                                case 'weightedScore': return item.weightedScore;
+                                default: return 0;
+                            }
+                        });
+                        return (
                     <table className="w-full text-sm text-left">
                         <thead className={`text-xs uppercase ${dark ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-50 text-slate-700'}`}>
                             <tr>
-                                <th className={thClass}>{t.assignee}</th>
-                                <th className={`${thClass} text-center`}>{t.totalTasksCol}</th>
-                                <th className={`${thClass} text-center`}>{t.onTimeRate}</th>
-                                <th className={`${thClass} text-center`}>{t.kpiDevImprovement}</th>
-                                <th className={`${thClass} text-center`}>{t.kpiBugFixRate}</th>
-                                <th className={`${thClass} text-center`}>{t.kpiAvgSprint}</th>
-                                <th className={`${thClass} text-center`}>{t.kpiWeightedScore}</th>
+                                <KpiSortHeader sortKey="name" label={t.assignee} />
+                                <KpiSortHeader sortKey="total" label={t.totalTasksCol} className="text-center" />
+                                <KpiSortHeader sortKey="onTimeRate" label={t.onTimeRate} className="text-center" />
+                                <KpiSortHeader sortKey="devImprovement" label={t.kpiDevImprovement} className="text-center" />
+                                <KpiSortHeader sortKey="bugFixRate" label={t.kpiBugFixRate} className="text-center" />
+                                <KpiSortHeader sortKey="avgSprint" label={t.kpiAvgSprint} className="text-center" />
+                                <KpiSortHeader sortKey="weightedScore" label={t.kpiWeightedScore} className="text-center" />
                             </tr>
                         </thead>
                         <tbody>
-                            {individualKPI.map(p => (
+                            {sortedKpi.map(p => (
                                 <tr key={p.name} className={`border-b transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
                                     <td className={`${tdClass} font-medium`}>{p.name}</td>
                                     <td className={`${tdClass} text-center`}>{p.total}</td>
@@ -1581,6 +1650,8 @@ export default function App() {
                             ))}
                         </tbody>
                     </table>
+                        );
+                    })()}
                 </div>
             </div>
 
@@ -1819,18 +1890,38 @@ export default function App() {
                     <div className="px-6 pb-6">
                         <h4 className={`text-sm font-semibold mb-3 ${dark ? 'text-slate-300' : 'text-slate-700'}`}>{t.highPriorityAlerts}</h4>
                         <div className="overflow-x-auto">
+                            {(() => {
+                                const AlertSortHeader = ({ sortKey, label, className = '' }) => (
+                                    <th className={`${thClass} cursor-pointer select-none hover:text-blue-400 transition-colors ${className}`} onClick={() => toggleAlertSort(sortKey)}>
+                                        <div className={`flex items-center gap-1 ${className.includes('text-center') ? 'justify-center' : ''}`}>
+                                            {label}
+                                            {alertSort.key === sortKey ? (alertSort.dir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : <ArrowUpDown size={12} className="opacity-30" />}
+                                        </div>
+                                    </th>
+                                );
+                                const sortedAlerts = sortData(delayRiskData.alerts, alertSort, (item, key) => {
+                                    switch (key) {
+                                        case 'id': return item.id;
+                                        case 'summary': return item.summary;
+                                        case 'assignee': return item.assignee;
+                                        case 'priority': return item.priority;
+                                        case 'delay': return item.delayDays;
+                                        default: return 0;
+                                    }
+                                });
+                                return (
                             <table className="w-full text-sm text-left">
                                 <thead className={`text-xs uppercase ${dark ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-50 text-slate-700'}`}>
                                     <tr>
-                                        <th className={thClass}>{t.issueKey}</th>
-                                        <th className={thClass}>{t.summary}</th>
-                                        <th className={thClass}>{t.assignee}</th>
-                                        <th className={`${thClass} text-center`}>Priority</th>
-                                        <th className={`${thClass} text-center`}>{t.delayDays}</th>
+                                        <AlertSortHeader sortKey="id" label={t.issueKey} />
+                                        <AlertSortHeader sortKey="summary" label={t.summary} />
+                                        <AlertSortHeader sortKey="assignee" label={t.assignee} />
+                                        <AlertSortHeader sortKey="priority" label="Priority" className="text-center" />
+                                        <AlertSortHeader sortKey="delay" label={t.delayDays} className="text-center" />
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {delayRiskData.alerts.map((item, i) => (
+                                    {sortedAlerts.map((item, i) => (
                                         <tr key={i} className={`border-b ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
                                             <td className={`${tdClass} font-medium`}>
                                                 <a href={`${JIRA_BASE}/${item.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{item.id}</a>
@@ -1847,6 +1938,8 @@ export default function App() {
                                     ))}
                                 </tbody>
                             </table>
+                                );
+                            })()}
                         </div>
                     </div>
                 )}
@@ -1987,7 +2080,7 @@ export default function App() {
 
             {/* Data Table - show only parent tasks and standalone tasks (no subtasks) */}
             {(() => {
-                const tableData = filteredData.filter(d => !d.parent);
+                const rawTableData = filteredData.filter(d => !d.parent);
                 // Build subtask info for parent tasks
                 const subtaskInfoMap = {};
                 filteredData.forEach(d => {
@@ -2000,6 +2093,40 @@ export default function App() {
                         if (d.delayDays > 0) { s.totalDelay += d.delayDays; s.delayedCount++; }
                     }
                 });
+                // Helper to get sortable value for each column
+                const getSortVal = (item) => {
+                    const sub = subtaskInfoMap[item.id];
+                    const has = !!sub;
+                    switch (tableSort.key) {
+                        case 'id': return item.id;
+                        case 'sheet': return item.sheetName;
+                        case 'summary': return item.summary;
+                        case 'epic': return item.epicLink || '';
+                        case 'assignee': return item.assignee;
+                        case 'status': return item.status;
+                        case 'progress': return has ? sub.done / sub.total : -1;
+                        case 'dueDate': return item.dueDate ? item.dueDate.getTime() : 0;
+                        case 'endDate': return item.endDate ? item.endDate.getTime() : 0;
+                        case 'devTime': return has && sub.total ? sub.totalDevTime / sub.total : item.devTime;
+                        case 'delay': return has && sub.total ? sub.totalDelay / sub.total : item.delayDays;
+                        default: return 0;
+                    }
+                };
+                const tableData = tableSort.key ? [...rawTableData].sort((a, b) => {
+                    const va = getSortVal(a), vb = getSortVal(b);
+                    const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+                    return tableSort.dir === 'asc' ? cmp : -cmp;
+                }) : rawTableData;
+
+                const SortHeader = ({ sortKey, label, className = '' }) => (
+                    <th className={`${thClass} py-4 cursor-pointer select-none hover:text-blue-400 transition-colors ${className}`} onClick={() => toggleSort(sortKey)}>
+                        <div className={`flex items-center gap-1 ${className.includes('text-center') ? 'justify-center' : ''}`}>
+                            {label}
+                            {tableSort.key === sortKey ? (tableSort.dir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : <ArrowUpDown size={12} className="opacity-30" />}
+                        </div>
+                    </th>
+                );
+
                 return (
             <div className={`${panel} overflow-hidden`}>
                 <div className={`p-6 border-b flex justify-between items-center ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
@@ -2010,17 +2137,17 @@ export default function App() {
                     <table className="w-full text-sm text-left">
                         <thead className={`text-xs uppercase ${dark ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-50 text-slate-700'}`}>
                             <tr>
-                                <th className={`${thClass} py-4`}>{t.issueKey}</th>
-                                <th className={`${thClass} py-4`}>Sheet</th>
-                                <th className={`${thClass} py-4`}>{t.summary}</th>
-                                <th className={`${thClass} py-4`}>{t.epicCol}</th>
-                                <th className={`${thClass} py-4`}>{t.assignee}</th>
-                                <th className={`${thClass} py-4`}>{t.status}</th>
-                                <th className={`${thClass} py-4`}>{t.progress}</th>
-                                <th className={`${thClass} py-4`}>{t.dueDate}</th>
-                                <th className={`${thClass} py-4`}>{t.endDate}</th>
-                                <th className={`${thClass} py-4 text-center`}>{t.devDays}</th>
-                                <th className={`${thClass} py-4 text-center`}>{t.delayDays}</th>
+                                <SortHeader sortKey="id" label={t.issueKey} />
+                                <SortHeader sortKey="sheet" label="Sheet" />
+                                <SortHeader sortKey="summary" label={t.summary} />
+                                <SortHeader sortKey="epic" label={t.epicCol} />
+                                <SortHeader sortKey="assignee" label={t.assignee} />
+                                <SortHeader sortKey="status" label={t.status} />
+                                <SortHeader sortKey="progress" label={t.progress} />
+                                <SortHeader sortKey="dueDate" label={t.dueDate} />
+                                <SortHeader sortKey="endDate" label={t.endDate} />
+                                <SortHeader sortKey="devTime" label={t.devDays} className="text-center" />
+                                <SortHeader sortKey="delay" label={t.delayDays} className="text-center" />
                             </tr>
                         </thead>
                         <tbody>
