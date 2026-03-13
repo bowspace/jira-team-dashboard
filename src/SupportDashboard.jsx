@@ -132,6 +132,13 @@ const translations = {
         count: 'จำนวน',
         avgTime: 'เวลาเฉลี่ย (ชม.)',
         noData: 'ไม่มีข้อมูล',
+        clear: 'ล้าง',
+        reset: 'รีเซ็ต',
+        applyFilters: 'ใช้ตัวกรอง',
+        approvedPerTotal: 'อนุมัติ / ทั้งหมด',
+        refreshData: 'รีเฟรชข้อมูล',
+        showingFirst: 'แสดง',
+        of: 'จาก',
     },
     en: {
         title: 'Platform Support Dashboard',
@@ -169,6 +176,13 @@ const translations = {
         count: 'Count',
         avgTime: 'Avg Time (hrs)',
         noData: 'No data',
+        clear: 'Clear',
+        reset: 'Reset',
+        applyFilters: 'Apply Filters',
+        approvedPerTotal: 'Approved / Total',
+        refreshData: 'Refresh data',
+        showingFirst: 'Showing',
+        of: 'of',
     },
     cn: {
         title: 'Platform Support Dashboard',
@@ -206,11 +220,18 @@ const translations = {
         count: '数量',
         avgTime: '平均时间 (小时)',
         noData: '暂无数据',
+        clear: '清除',
+        reset: '重置',
+        applyFilters: '应用筛选',
+        approvedPerTotal: '已批准 / 总数',
+        refreshData: '刷新数据',
+        showingFirst: '显示',
+        of: '/',
     },
 };
 
 // --- Mobile Filter Sheet (accordion-style) ---
-function MobileFilterSheet({ dark, onClose, onClear, hasFilters, totalActive, sections, setFilters }) {
+function MobileFilterSheet({ dark, onClose, onClear, hasFilters, totalActive, sections, setFilters, t }) {
     const [expandedSection, setExpandedSection] = useState(null);
 
     return (
@@ -225,14 +246,14 @@ function MobileFilterSheet({ dark, onClose, onClear, hasFilters, totalActive, se
                 <div className={`flex items-center justify-between px-5 pb-3 border-b ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
                     <div className="flex items-center gap-2">
                         <Filter size={18} className={dark ? 'text-slate-400' : 'text-slate-500'} />
-                        <h3 className={`text-lg font-bold ${dark ? 'text-white' : 'text-slate-900'}`}>Filters</h3>
+                        <h3 className={`text-lg font-bold ${dark ? 'text-white' : 'text-slate-900'}`}>{t.filters}</h3>
                         {totalActive > 0 && (
                             <span className="px-2 py-0.5 rounded-full bg-blue-500 text-white text-xs font-bold">{totalActive}</span>
                         )}
                     </div>
                     <div className="flex items-center gap-2">
                         {hasFilters && (
-                            <button onClick={onClear} className="text-sm text-blue-500 font-medium px-2 py-1">Reset</button>
+                            <button onClick={onClear} className="text-sm text-blue-500 font-medium px-2 py-1">{t.reset}</button>
                         )}
                         <button onClick={onClose} className={`p-1.5 rounded-full ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
                             <X size={20} />
@@ -286,7 +307,7 @@ function MobileFilterSheet({ dark, onClose, onClear, hasFilters, totalActive, se
                 {/* Apply button */}
                 <div className={`p-4 border-t ${dark ? 'border-slate-700' : 'border-slate-200'}`} style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))' }}>
                     <button onClick={onClose} className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm active:bg-blue-700 transition-colors">
-                        Apply Filters {totalActive > 0 ? `(${totalActive})` : ''}
+                        {t.applyFilters} {totalActive > 0 ? `(${totalActive})` : ''}
                     </button>
                 </div>
             </div>
@@ -698,7 +719,7 @@ export default function SupportDashboard({ dark, lang }) {
                         onClick={() => loadData(false)}
                         disabled={refreshing}
                         className={`p-2 rounded-lg border shadow-sm transition-colors ${dark ? 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'} ${refreshing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        title="Refresh data"
+                        title={t.refreshData}
                     >
                         <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
                     </button>
@@ -740,7 +761,7 @@ export default function SupportDashboard({ dark, lang }) {
                 <MultiSelect options={filterOptions.statuses} selected={filters.statuses} onChange={v => setFilters(f => ({ ...f, statuses: v }))} label={t.allStatuses} dark={dark} />
                 {hasFilters && (
                     <button onClick={clearFilters} className="text-sm text-blue-500 hover:text-blue-400 flex items-center gap-1">
-                        <X size={14} /> Clear
+                        <X size={14} /> {t.clear}
                     </button>
                 )}
             </div>
@@ -757,7 +778,7 @@ export default function SupportDashboard({ dark, lang }) {
                     { title: t.allAssignees, key: 'assignees', options: filterOptions.assignees, selected: filters.assignees },
                     { title: t.allStatuses, key: 'statuses', options: filterOptions.statuses, selected: filters.statuses },
                 ];
-                return <MobileFilterSheet dark={dark} onClose={() => setShowFilterModal(false)} onClear={clearFilters} hasFilters={hasFilters} totalActive={totalActive} sections={filterSections} setFilters={setFilters} />;
+                return <MobileFilterSheet dark={dark} onClose={() => setShowFilterModal(false)} onClear={clearFilters} hasFilters={hasFilters} totalActive={totalActive} sections={filterSections} setFilters={setFilters} t={t} />;
             })()}
 
             {/* KPI Cards */}
@@ -776,7 +797,7 @@ export default function SupportDashboard({ dark, lang }) {
                         <CheckCircle className="text-emerald-500" size={24} />
                     </div>
                     <div className={`text-3xl font-bold ${dark ? 'text-white' : 'text-slate-900'}`}>{kpis.resolvedRate.toFixed(1)}%</div>
-                    <div className={`text-sm mt-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>Approved / Total</div>
+                    <div className={`text-sm mt-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.approvedPerTotal}</div>
                 </div>
                 <div className={`${card} border-l-purple-500`}>
                     <div className="flex items-center justify-between mb-2">

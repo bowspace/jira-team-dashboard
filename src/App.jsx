@@ -95,7 +95,7 @@ function MultiSelect({ options, selected, onChange, label, dark, epicMap }) {
 }
 
 // --- Mobile Filter Modal (accordion-style) ---
-function MobileFilterModal({ dark, onClose, onClear, hasFilters, totalActive, sections }) {
+function MobileFilterModal({ dark, onClose, onClear, hasFilters, totalActive, sections, t }) {
     const [expandedSection, setExpandedSection] = useState(null);
 
     return (
@@ -110,14 +110,14 @@ function MobileFilterModal({ dark, onClose, onClear, hasFilters, totalActive, se
                 <div className={`flex items-center justify-between px-5 pb-3 border-b ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
                     <div className="flex items-center gap-2">
                         <Filter size={18} className={dark ? 'text-slate-400' : 'text-slate-500'} />
-                        <h3 className={`text-lg font-bold ${dark ? 'text-white' : 'text-slate-900'}`}>Filters</h3>
+                        <h3 className={`text-lg font-bold ${dark ? 'text-white' : 'text-slate-900'}`}>{t.filters}</h3>
                         {totalActive > 0 && (
                             <span className="px-2 py-0.5 rounded-full bg-blue-500 text-white text-xs font-bold">{totalActive}</span>
                         )}
                     </div>
                     <div className="flex items-center gap-2">
                         {hasFilters && (
-                            <button onClick={onClear} className="text-sm text-blue-500 font-medium px-2 py-1">Reset</button>
+                            <button onClick={onClear} className="text-sm text-blue-500 font-medium px-2 py-1">{t.reset}</button>
                         )}
                         <button onClick={onClose} className={`p-1.5 rounded-full ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
                             <X size={20} />
@@ -130,7 +130,7 @@ function MobileFilterModal({ dark, onClose, onClear, hasFilters, totalActive, se
                         if (section.type === 'toggle') {
                             return (
                                 <div key={i} className={`px-5 py-3 border-b ${dark ? 'border-slate-700/50' : 'border-slate-100'}`}>
-                                    <label className={`text-xs font-semibold uppercase tracking-wider mb-2 block ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{section.title}</label>
+                                    <label className={`text-xs font-semibold uppercase tracking-wider mb-2 block ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.period}</label>
                                     <div className={`flex items-center gap-1 rounded-lg p-1 ${dark ? 'bg-slate-700' : 'bg-slate-100'}`}>
                                         {section.options.map(opt => (
                                             <button
@@ -211,7 +211,7 @@ function MobileFilterModal({ dark, onClose, onClear, hasFilters, totalActive, se
                         onClick={onClose}
                         className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm active:bg-blue-700 transition-colors"
                     >
-                        Apply Filters {totalActive > 0 ? `(${totalActive})` : ''}
+                        {t.applyFilters} {totalActive > 0 ? `(${totalActive})` : ''}
                     </button>
                 </div>
             </div>
@@ -376,6 +376,14 @@ const translations = {
         taskCount: 'จำนวนงาน',
         avgSprintCount: 'Sprint เฉลี่ย',
         avgDelaySprint: 'Delay เฉลี่ย',
+        reset: 'รีเซ็ต',
+        applyFilters: 'ใช้ตัวกรอง',
+        period: 'ช่วงเวลา',
+        jiraPerformance: 'Jira Performance',
+        itSupport: 'IT Support',
+        lightMode: 'Light',
+        darkMode: 'Dark',
+        refreshData: 'รีเฟรชข้อมูล',
     },
     en: {
         title: 'IT Team Performance Dashboard',
@@ -486,6 +494,14 @@ const translations = {
         taskCount: 'Task Count',
         avgSprintCount: 'Avg Sprint',
         avgDelaySprint: 'Avg Delay',
+        reset: 'Reset',
+        applyFilters: 'Apply Filters',
+        period: 'Period',
+        jiraPerformance: 'Jira Performance',
+        itSupport: 'IT Support',
+        lightMode: 'Light',
+        darkMode: 'Dark',
+        refreshData: 'Refresh data',
     },
     zh: {
         title: 'IT团队绩效仪表板',
@@ -596,6 +612,14 @@ const translations = {
         taskCount: '任务数',
         avgSprintCount: '平均 Sprint',
         avgDelaySprint: '平均延迟',
+        reset: '重置',
+        applyFilters: '应用筛选',
+        period: '时间段',
+        jiraPerformance: 'Jira 绩效',
+        itSupport: 'IT 支持',
+        lightMode: '浅色',
+        darkMode: '深色',
+        refreshData: '刷新数据',
     }
 };
 
@@ -1451,8 +1475,8 @@ export default function App() {
     const tdClass = `px-4 py-3 ${dark ? 'text-slate-300' : 'text-slate-600'}`;
 
     const SIDEBAR_ITEMS = [
-        { key: 'jira', label: 'Jira Performance', icon: Activity, path: '/' },
-        { key: 'support', label: 'IT Support', icon: Headphones, path: '/support' },
+        { key: 'jira', label: t.jiraPerformance, icon: Activity, path: '/' },
+        { key: 'support', label: t.itSupport, icon: Headphones, path: '/support' },
     ];
 
     return (
@@ -1508,13 +1532,13 @@ export default function App() {
                 <div className={`border-t py-3 px-2 flex flex-col gap-2 ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
                     <button
                         onClick={toggleDark}
-                        title={sidebarCollapsed ? (dark ? 'Light mode' : 'Dark mode') : undefined}
+                        title={sidebarCollapsed ? (dark ? t.lightMode : t.darkMode) : undefined}
                         className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
                             sidebarCollapsed ? 'justify-center px-0' : ''
                         } ${dark ? 'text-yellow-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}
                     >
                         {dark ? <Sun size={20} /> : <Moon size={20} />}
-                        {!sidebarCollapsed && <span className="text-sm">{dark ? 'Light Mode' : 'Dark Mode'}</span>}
+                        {!sidebarCollapsed && <span className="text-sm">{dark ? t.lightMode : t.darkMode}</span>}
                     </button>
                     {!sidebarCollapsed && (
                         <div className="flex items-center gap-1 px-1">
@@ -1560,7 +1584,7 @@ export default function App() {
                         onClick={() => loadData(false)}
                         disabled={refreshing}
                         className={`p-2 rounded-lg border shadow-sm transition-colors ${dark ? 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'} ${refreshing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        title="Refresh data"
+                        title={t.refreshData}
                     >
                         <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
                     </button>
@@ -1640,9 +1664,10 @@ export default function App() {
                     onClear={resetFilters}
                     hasFilters={hasActiveFilters}
                     totalActive={Object.values(filters).reduce((n, f) => n + (Array.isArray(f) ? f.length : 0), 0)}
+                    t={t}
                     sections={[
                         {
-                            title: 'Period',
+                            title: t.period,
                             type: 'toggle',
                             options: [
                                 { key: 'weekly', label: t.weekly },
@@ -2607,7 +2632,7 @@ export default function App() {
                     }`}
                 >
                     {dark ? <Sun size={20} /> : <Moon size={20} />}
-                    <span className="text-[10px] font-medium">{dark ? 'Light' : 'Dark'}</span>
+                    <span className="text-[10px] font-medium">{dark ? t.lightMode : t.darkMode}</span>
                 </button>
             </nav>
         </div>
