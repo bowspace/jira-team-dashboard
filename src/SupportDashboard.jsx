@@ -209,6 +209,91 @@ const translations = {
     },
 };
 
+// --- Mobile Filter Sheet (accordion-style) ---
+function MobileFilterSheet({ dark, onClose, onClear, hasFilters, totalActive, sections, setFilters }) {
+    const [expandedSection, setExpandedSection] = useState(null);
+
+    return (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col">
+            <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+            <div className={`relative mt-auto max-h-[85vh] flex flex-col rounded-t-2xl ${dark ? 'bg-slate-800' : 'bg-white'}`}>
+                {/* Drag handle */}
+                <div className="flex justify-center pt-3 pb-1">
+                    <div className={`w-10 h-1 rounded-full ${dark ? 'bg-slate-600' : 'bg-slate-300'}`} />
+                </div>
+                {/* Header */}
+                <div className={`flex items-center justify-between px-5 pb-3 border-b ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
+                    <div className="flex items-center gap-2">
+                        <Filter size={18} className={dark ? 'text-slate-400' : 'text-slate-500'} />
+                        <h3 className={`text-lg font-bold ${dark ? 'text-white' : 'text-slate-900'}`}>Filters</h3>
+                        {totalActive > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500 text-white text-xs font-bold">{totalActive}</span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {hasFilters && (
+                            <button onClick={onClear} className="text-sm text-blue-500 font-medium px-2 py-1">Reset</button>
+                        )}
+                        <button onClick={onClose} className={`p-1.5 rounded-full ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+                {/* Sections */}
+                <div className="flex-1 overflow-y-auto overscroll-contain">
+                    {sections.map(section => {
+                        const isExpanded = expandedSection === section.key;
+                        const selectedCount = section.selected?.length || 0;
+                        const toggleItem = (opt) => {
+                            if (section.selected.includes(opt)) setFilters(prev => ({ ...prev, [section.key]: section.selected.filter(v => v !== opt) }));
+                            else setFilters(prev => ({ ...prev, [section.key]: [...section.selected, opt] }));
+                        };
+
+                        return (
+                            <div key={section.key} className={`border-b ${dark ? 'border-slate-700/50' : 'border-slate-100'}`}>
+                                <button
+                                    onClick={() => setExpandedSection(isExpanded ? null : section.key)}
+                                    className={`w-full flex items-center justify-between px-5 py-3.5 ${dark ? 'active:bg-slate-700' : 'active:bg-slate-50'}`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-sm font-medium ${dark ? 'text-slate-200' : 'text-slate-700'}`}>{section.title}</span>
+                                        {selectedCount > 0 && (
+                                            <span className="px-1.5 py-0.5 rounded-md bg-blue-500/20 text-blue-500 text-xs font-bold">{selectedCount}</span>
+                                        )}
+                                    </div>
+                                    <ChevronDown size={16} className={`transition-transform ${dark ? 'text-slate-500' : 'text-slate-400'} ${isExpanded ? 'rotate-180' : ''}`} />
+                                </button>
+                                {isExpanded && (
+                                    <div className="px-5 pb-3 space-y-0.5">
+                                        <label className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer ${dark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                                            <input type="checkbox" checked={selectedCount === 0} onChange={() => setFilters(prev => ({ ...prev, [section.key]: [] }))} className="w-4.5 h-4.5 rounded accent-blue-500" />
+                                            <span className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-slate-700'}`}>{section.title}</span>
+                                        </label>
+                                        <div className="max-h-52 overflow-y-auto">
+                                            {section.options.map(opt => (
+                                                <label key={opt} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer ${dark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                                                    <input type="checkbox" checked={section.selected.includes(opt)} onChange={() => toggleItem(opt)} className="w-4.5 h-4.5 rounded accent-blue-500" />
+                                                    <span className={`text-sm ${dark ? 'text-slate-300' : 'text-slate-600'}`}>{opt}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                {/* Apply button */}
+                <div className={`p-4 border-t ${dark ? 'border-slate-700' : 'border-slate-200'}`} style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))' }}>
+                    <button onClick={onClose} className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm active:bg-blue-700 transition-colors">
+                        Apply Filters {totalActive > 0 ? `(${totalActive})` : ''}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // --- Constants ---
 const SHEET_ID = '18a2xbNrbGxEaxK8KGCZhbWueqXpMrgxJgspIW42aIn0';
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
@@ -377,6 +462,7 @@ export default function SupportDashboard({ dark, lang }) {
         statuses: [],
     });
 
+    const [showFilterModal, setShowFilterModal] = useState(false);
     const [tableSort, setTableSort] = useState({ key: null, dir: 'desc' });
     const toggleSort = (key) => setTableSort(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
 
@@ -597,17 +683,17 @@ export default function SupportDashboard({ dark, lang }) {
     return (
         <div className="space-y-6">
             {/* Sticky Header + Filters */}
-            <div className={`sticky top-0 z-40 -mx-6 px-6 pt-2 pb-4 ${dark ? 'bg-slate-900/95 backdrop-blur-sm' : 'bg-slate-50/95 backdrop-blur-sm'}`}>
+            <div className={`sticky top-0 z-40 -mx-4 px-4 md:-mx-6 md:px-6 pt-2 pb-4 ${dark ? 'bg-slate-900/95 backdrop-blur-sm' : 'bg-slate-50/95 backdrop-blur-sm'}`}>
             {/* Header */}
             <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center">
                 <div>
-                    <h1 className={`text-3xl font-bold flex items-center gap-3 ${dark ? 'text-white' : 'text-slate-900'}`}>
-                        <Shield className="text-amber-500" size={32} />
+                    <h1 className={`text-2xl md:text-3xl font-bold flex items-center gap-2 md:gap-3 ${dark ? 'text-white' : 'text-slate-900'}`}>
+                        <Shield className="text-amber-500" size={28} />
                         {t.title}
                     </h1>
-                    <p className={`mt-1 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.subtitle}</p>
+                    <p className={`mt-1 text-sm md:text-base ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.subtitle}</p>
                 </div>
-                <div className="mt-4 md:mt-0 flex items-center gap-3">
+                <div className="mt-3 md:mt-0 flex items-center gap-2 md:gap-3">
                     <button
                         onClick={() => loadData(false)}
                         disabled={refreshing}
@@ -616,7 +702,19 @@ export default function SupportDashboard({ dark, lang }) {
                     >
                         <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
                     </button>
-                    <div className={`text-sm px-4 py-2 rounded-lg flex items-center gap-2 border shadow-sm ${dark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200'}`}>
+                    {/* Mobile Filter Button */}
+                    <button
+                        onClick={() => setShowFilterModal(true)}
+                        className={`md:hidden relative p-2 rounded-lg border shadow-sm transition-colors ${dark ? 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                    >
+                        <Filter size={20} />
+                        {hasFilters && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">
+                                {Object.values(filters).reduce((n, f) => n + f.length, 0)}
+                            </span>
+                        )}
+                    </button>
+                    <div className={`hidden md:flex text-sm px-4 py-2 rounded-lg items-center gap-2 border shadow-sm ${dark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200'}`}>
                         <span className={`w-2 h-2 rounded-full ${dataSourceInfo.includes('Live') ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
                         {t.dataSource}: <a href={`https://docs.google.com/spreadsheets/d/${SHEET_ID}`} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-500 hover:text-blue-400 hover:underline">{dataSourceInfo}</a>
                         {lastUpdated && (
@@ -628,8 +726,8 @@ export default function SupportDashboard({ dark, lang }) {
                 </div>
             </div>
 
-            {/* Filters */}
-            <div className={`${panel} p-4 flex flex-wrap gap-3 items-center`}>
+            {/* Desktop Filters — hidden on mobile */}
+            <div className={`hidden md:flex ${panel} p-4 flex-wrap gap-3 items-center`}>
                 <div className={`flex items-center gap-2 font-medium mr-1 ${dark ? 'text-slate-400' : 'text-slate-600'}`}>
                     <Filter size={20} />
                     {t.filters}:
@@ -647,6 +745,20 @@ export default function SupportDashboard({ dark, lang }) {
                 )}
             </div>
             </div>
+
+            {/* Mobile Filter Modal */}
+            {showFilterModal && (() => {
+                const totalActive = Object.values(filters).reduce((n, f) => n + f.length, 0);
+                const filterSections = [
+                    { title: t.allQuarters, key: 'quarters', options: filterOptions.quarters, selected: filters.quarters },
+                    { title: t.allPlatforms, key: 'platforms', options: filterOptions.platforms, selected: filters.platforms },
+                    { title: t.allTypes, key: 'types', options: filterOptions.types, selected: filters.types },
+                    { title: t.allPriorities, key: 'priorities', options: filterOptions.priorities, selected: filters.priorities },
+                    { title: t.allAssignees, key: 'assignees', options: filterOptions.assignees, selected: filters.assignees },
+                    { title: t.allStatuses, key: 'statuses', options: filterOptions.statuses, selected: filters.statuses },
+                ];
+                return <MobileFilterSheet dark={dark} onClose={() => setShowFilterModal(false)} onClear={clearFilters} hasFilters={hasFilters} totalActive={totalActive} sections={filterSections} setFilters={setFilters} />;
+            })()}
 
             {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

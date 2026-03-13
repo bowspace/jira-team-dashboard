@@ -94,6 +94,131 @@ function MultiSelect({ options, selected, onChange, label, dark, epicMap }) {
     );
 }
 
+// --- Mobile Filter Modal (accordion-style) ---
+function MobileFilterModal({ dark, onClose, onClear, hasFilters, totalActive, sections }) {
+    const [expandedSection, setExpandedSection] = useState(null);
+
+    return (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col">
+            <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+            <div className={`relative mt-auto max-h-[85vh] flex flex-col rounded-t-2xl ${dark ? 'bg-slate-800' : 'bg-white'}`}>
+                {/* Drag handle */}
+                <div className="flex justify-center pt-3 pb-1">
+                    <div className={`w-10 h-1 rounded-full ${dark ? 'bg-slate-600' : 'bg-slate-300'}`} />
+                </div>
+                {/* Header */}
+                <div className={`flex items-center justify-between px-5 pb-3 border-b ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
+                    <div className="flex items-center gap-2">
+                        <Filter size={18} className={dark ? 'text-slate-400' : 'text-slate-500'} />
+                        <h3 className={`text-lg font-bold ${dark ? 'text-white' : 'text-slate-900'}`}>Filters</h3>
+                        {totalActive > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500 text-white text-xs font-bold">{totalActive}</span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {hasFilters && (
+                            <button onClick={onClear} className="text-sm text-blue-500 font-medium px-2 py-1">Reset</button>
+                        )}
+                        <button onClick={onClose} className={`p-1.5 rounded-full ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+                {/* Sections */}
+                <div className="flex-1 overflow-y-auto overscroll-contain">
+                    {sections.map((section, i) => {
+                        if (section.type === 'toggle') {
+                            return (
+                                <div key={i} className={`px-5 py-3 border-b ${dark ? 'border-slate-700/50' : 'border-slate-100'}`}>
+                                    <label className={`text-xs font-semibold uppercase tracking-wider mb-2 block ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{section.title}</label>
+                                    <div className={`flex items-center gap-1 rounded-lg p-1 ${dark ? 'bg-slate-700' : 'bg-slate-100'}`}>
+                                        {section.options.map(opt => (
+                                            <button
+                                                key={opt.key}
+                                                onClick={() => section.onChange(opt.key)}
+                                                className={`flex-1 px-3 py-2 text-sm rounded-md font-medium transition-colors ${
+                                                    section.value === opt.key
+                                                        ? 'bg-blue-600 text-white shadow-sm'
+                                                        : dark ? 'text-slate-400' : 'text-slate-600'
+                                                }`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        const isExpanded = expandedSection === section.key;
+                        const selectedCount = section.selected?.length || 0;
+                        const toggleItem = (opt) => {
+                            if (section.selected.includes(opt)) section.onChange(section.selected.filter(v => v !== opt));
+                            else section.onChange([...section.selected, opt]);
+                        };
+
+                        return (
+                            <div key={section.key} className={`border-b ${dark ? 'border-slate-700/50' : 'border-slate-100'}`}>
+                                <button
+                                    onClick={() => setExpandedSection(isExpanded ? null : section.key)}
+                                    className={`w-full flex items-center justify-between px-5 py-3.5 ${dark ? 'active:bg-slate-700' : 'active:bg-slate-50'}`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-sm font-medium ${dark ? 'text-slate-200' : 'text-slate-700'}`}>{section.title}</span>
+                                        {selectedCount > 0 && (
+                                            <span className="px-1.5 py-0.5 rounded-md bg-blue-500/20 text-blue-500 text-xs font-bold">{selectedCount}</span>
+                                        )}
+                                    </div>
+                                    <ChevronDown size={16} className={`transition-transform ${dark ? 'text-slate-500' : 'text-slate-400'} ${isExpanded ? 'rotate-180' : ''}`} />
+                                </button>
+                                {isExpanded && (
+                                    <div className={`px-5 pb-3 space-y-0.5`}>
+                                        {/* Select All */}
+                                        <label className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer ${dark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedCount === 0}
+                                                onChange={() => section.onChange([])}
+                                                className="w-4.5 h-4.5 rounded accent-blue-500"
+                                            />
+                                            <span className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-slate-700'}`}>{section.title}</span>
+                                        </label>
+                                        {/* Options */}
+                                        <div className={`max-h-52 overflow-y-auto rounded-lg ${dark ? 'bg-slate-750' : ''}`}>
+                                            {section.options.map(opt => (
+                                                <label key={opt} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer ${dark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={section.selected.includes(opt)}
+                                                        onChange={() => toggleItem(opt)}
+                                                        className="w-4.5 h-4.5 rounded accent-blue-500"
+                                                    />
+                                                    <span className={`text-sm ${dark ? 'text-slate-300' : 'text-slate-600'}`}>
+                                                        {section.epicMap?.[opt] ? `${opt} - ${section.epicMap[opt]?.summary?.slice(0, 25)}` : opt}
+                                                    </span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                {/* Apply button */}
+                <div className={`p-4 border-t ${dark ? 'border-slate-700' : 'border-slate-200'}`} style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))' }}>
+                    <button
+                        onClick={onClose}
+                        className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm active:bg-blue-700 transition-colors"
+                    >
+                        Apply Filters {totalActive > 0 ? `(${totalActive})` : ''}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // --- Info Popover Component ---
 function InfoPopover({ dark, lines }) {
     const [open, setOpen] = useState(false);
@@ -607,6 +732,7 @@ export default function App() {
     const [lang, setLang] = useState(() => localStorage.getItem('dashboard-lang') || 'th');
     const [dark, setDark] = useState(() => localStorage.getItem('dashboard-dark') === 'true');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('dashboard-sidebar') === 'collapsed');
+    const [showFilterModal, setShowFilterModal] = useState(false);
     const getPageFromPath = () => window.location.pathname === '/support' ? 'support' : 'jira';
     const [activePage, setActivePageState] = useState(getPageFromPath);
     const setActivePage = (page) => {
@@ -1331,8 +1457,8 @@ export default function App() {
 
     return (
         <div className={`min-h-screen flex font-sans transition-colors ${dark ? 'dark bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
-            {/* Sidebar */}
-            <aside className={`sticky top-0 h-screen flex flex-col border-r transition-all duration-300 ${
+            {/* Desktop Sidebar — hidden on mobile */}
+            <aside className={`hidden md:flex sticky top-0 h-screen flex-col border-r transition-all duration-300 ${
                 sidebarCollapsed ? 'w-16' : 'w-56'
             } ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                 {/* Sidebar header */}
@@ -1411,24 +1537,24 @@ export default function App() {
             </aside>
 
             {/* Main content */}
-            <main className="flex-1 min-w-0">
-            <div className="p-6">
+            <main className="flex-1 min-w-0 pb-20 md:pb-0">
+            <div className="p-4 md:p-6">
             {activePage === 'support' && <SupportDashboard dark={dark} lang={lang} />}
 
             {activePage === 'jira' && (
             <>
             {/* Sticky Header + Filters */}
-            <div className={`sticky top-0 z-50 -mx-6 px-6 pt-2 pb-4 ${dark ? 'bg-slate-900/95 backdrop-blur-sm' : 'bg-slate-50/95 backdrop-blur-sm'}`}>
+            <div className={`sticky top-0 z-40 -mx-4 px-4 md:-mx-6 md:px-6 pt-2 pb-4 ${dark ? 'bg-slate-900/95 backdrop-blur-sm' : 'bg-slate-50/95 backdrop-blur-sm'}`}>
             {/* Header */}
             <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center">
                 <div>
-                    <h1 className={`text-3xl font-bold flex items-center gap-3 ${dark ? 'text-white' : 'text-slate-900'}`}>
-                        <Activity className="text-blue-500" size={32} />
+                    <h1 className={`text-2xl md:text-3xl font-bold flex items-center gap-2 md:gap-3 ${dark ? 'text-white' : 'text-slate-900'}`}>
+                        <Activity className="text-blue-500" size={28} />
                         {t.title}
                     </h1>
-                    <p className={`mt-1 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.subtitle}</p>
+                    <p className={`mt-1 text-sm md:text-base ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.subtitle}</p>
                 </div>
-                <div className="mt-4 md:mt-0 flex items-center gap-3">
+                <div className="mt-3 md:mt-0 flex items-center gap-2 md:gap-3">
                     {/* Refresh */}
                     <button
                         onClick={() => loadData(false)}
@@ -1438,8 +1564,20 @@ export default function App() {
                     >
                         <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
                     </button>
+                    {/* Mobile Filter Button */}
+                    <button
+                        onClick={() => setShowFilterModal(true)}
+                        className={`md:hidden relative p-2 rounded-lg border shadow-sm transition-colors ${dark ? 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                    >
+                        <Filter size={20} />
+                        {hasActiveFilters && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">
+                                {Object.values(filters).reduce((n, f) => n + (Array.isArray(f) ? f.length : 0), 0)}
+                            </span>
+                        )}
+                    </button>
                     {/* Data Source */}
-                    <div className={`text-sm px-4 py-2 rounded-lg flex items-center gap-2 border shadow-sm ${dark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200'}`}>
+                    <div className={`hidden md:flex text-sm px-4 py-2 rounded-lg items-center gap-2 border shadow-sm ${dark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200'}`}>
                         <span className={`w-2 h-2 rounded-full ${dataSourceInfo.includes('Live') ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
                         {t.dataSource}: <a href={`https://docs.google.com/spreadsheets/d/${SHEET_ID}`} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-500 hover:text-blue-400 hover:underline">{dataSourceInfo}</a>
                         {lastUpdated && (
@@ -1451,8 +1589,8 @@ export default function App() {
                 </div>
             </div>
 
-            {/* Filters Bar */}
-            <div className={`${panel} p-4 flex flex-wrap gap-3 items-center`}>
+            {/* Desktop Filters Bar — hidden on mobile */}
+            <div className={`hidden md:flex ${panel} p-4 flex-wrap gap-3 items-center`}>
                 <div className={`flex items-center gap-2 font-medium mr-1 ${dark ? 'text-slate-400' : 'text-slate-600'}`}>
                     <Filter size={20} />
                     {t.filters}:
@@ -1493,6 +1631,37 @@ export default function App() {
                 )}
             </div>
             </div>
+
+            {/* Mobile Filter Modal */}
+            {showFilterModal && (
+                <MobileFilterModal
+                    dark={dark}
+                    onClose={() => setShowFilterModal(false)}
+                    onClear={resetFilters}
+                    hasFilters={hasActiveFilters}
+                    totalActive={Object.values(filters).reduce((n, f) => n + (Array.isArray(f) ? f.length : 0), 0)}
+                    sections={[
+                        {
+                            title: 'Period',
+                            type: 'toggle',
+                            options: [
+                                { key: 'weekly', label: t.weekly },
+                                { key: 'monthly', label: t.monthly },
+                                { key: 'quarter', label: t.quarter },
+                            ],
+                            value: filters.dateType,
+                            onChange: (key) => setFilters(prev => ({ ...prev, dateType: key, dateValues: [] })),
+                        },
+                        { title: t.all, key: 'dateValues', options: dateOptions, selected: filters.dateValues, onChange: (v) => setFilters(prev => ({ ...prev, dateValues: v })) },
+                        { title: t.allStatuses, key: 'statusGroups', options: STATUS_GROUP_NAMES, selected: filters.statusGroups, onChange: (v) => setFilters(prev => ({ ...prev, statusGroups: v })) },
+                        { title: t.allProjects, key: 'projects', options: filterOptions.projects, selected: filters.projects, onChange: (v) => setFilters(prev => ({ ...prev, projects: v })) },
+                        { title: t.allAssignees, key: 'assignees', options: filterOptions.assignees, selected: filters.assignees, onChange: (v) => setFilters(prev => ({ ...prev, assignees: v })) },
+                        { title: t.allReporters, key: 'reporters', options: filterOptions.reporters, selected: filters.reporters, onChange: (v) => setFilters(prev => ({ ...prev, reporters: v })) },
+                        { title: t.allVersions, key: 'fixVersions', options: filterOptions.fixVersions, selected: filters.fixVersions, onChange: (v) => setFilters(prev => ({ ...prev, fixVersions: v })) },
+                        { title: t.allEpics, key: 'epicLinks', options: filterOptions.epicLinks, selected: filters.epicLinks, onChange: (v) => setFilters(prev => ({ ...prev, epicLinks: v })), epicMap },
+                    ]}
+                />
+            )}
 
             {/* KPIs Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -2408,6 +2577,39 @@ export default function App() {
             </>)}
         </div>
         </main>
+
+            {/* Mobile Bottom Nav — visible only on mobile */}
+            <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-50 border-t flex items-center justify-around safe-bottom ${
+                dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+            }`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+                {SIDEBAR_ITEMS.map(item => {
+                    const isActive = activePage === item.key;
+                    const Icon = item.icon;
+                    return (
+                        <button
+                            key={item.key}
+                            onClick={() => setActivePage(item.key)}
+                            className={`flex flex-col items-center gap-0.5 py-2 px-4 flex-1 transition-colors ${
+                                isActive
+                                    ? dark ? 'text-blue-400' : 'text-blue-600'
+                                    : dark ? 'text-slate-500' : 'text-slate-400'
+                            }`}
+                        >
+                            <Icon size={20} />
+                            <span className="text-[10px] font-medium">{item.label}</span>
+                        </button>
+                    );
+                })}
+                <button
+                    onClick={toggleDark}
+                    className={`flex flex-col items-center gap-0.5 py-2 px-4 flex-1 transition-colors ${
+                        dark ? 'text-yellow-400' : 'text-slate-400'
+                    }`}
+                >
+                    {dark ? <Sun size={20} /> : <Moon size={20} />}
+                    <span className="text-[10px] font-medium">{dark ? 'Light' : 'Dark'}</span>
+                </button>
+            </nav>
         </div>
     );
 }
