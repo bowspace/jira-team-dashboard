@@ -6,15 +6,22 @@ import {
 import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, ChevronUp, ArrowUpDown, X, Target, Bug, TrendingUp, Shield, Zap, Info, PanelLeftClose, PanelLeftOpen, Headphones } from 'lucide-react';
 import SupportDashboard from './SupportDashboard';
 
+// --- Helper: check if status is excluded from performance metrics ---
+const isExcludedFromPerformance = (status) => {
+    const s = (status || '').toLowerCase();
+    return s === "won't fix" || s === 'wont fix' || s === 'pending';
+};
+
 // --- Helper: check if status counts as "done" ---
 const isDone = (status) => {
     const s = (status || '').toLowerCase();
-    return s === 'done' || s === "won't fix" || s === 'wont fix';
+    return s === 'done';
 };
 
 // --- Status group mapping for filter ---
 const STATUS_GROUPS = [
-    { group: 'Done', statuses: ['done', "won't fix", 'wont fix'] },
+    { group: 'Done', statuses: ['done'] },
+    { group: "Won't Fix / Pending", statuses: ["won't fix", 'wont fix', 'pending'] },
     { group: 'To Do', statuses: ['backlog', 'to do'] },
     { group: 'QA In Progress', statuses: ['deployed to dev', 'deployed to stag', 'approved by qa'] },
     { group: 'Wait for PROD', statuses: ['approved by qa', 'approved on prod', 'deployed to prod'] },
@@ -384,6 +391,9 @@ const translations = {
         lightMode: 'Light',
         darkMode: 'Dark',
         refreshData: 'รีเฟรชข้อมูล',
+        excludedEffort: "งานนอกเหนือ Performance (Won't Fix / Pending)",
+        excludedDesc: 'งานที่ไม่นับรวมในอัตราการส่งงานตรงเวลาและ Delay เฉลี่ย',
+        excludedCount: 'งานที่ยกเว้น',
     },
     en: {
         title: 'IT Team Performance Dashboard',
@@ -502,6 +512,9 @@ const translations = {
         lightMode: 'Light',
         darkMode: 'Dark',
         refreshData: 'Refresh data',
+        excludedEffort: "Non-Performance Effort (Won't Fix / Pending)",
+        excludedDesc: 'Tasks excluded from delivery rate and delay calculations',
+        excludedCount: 'Excluded Tasks',
     },
     zh: {
         title: 'IT团队绩效仪表板',
@@ -620,6 +633,9 @@ const translations = {
         lightMode: '浅色',
         darkMode: '深色',
         refreshData: '刷新数据',
+        excludedEffort: "非绩效工作量（Won't Fix / Pending）",
+        excludedDesc: '不计入交付率和延迟平均值的任务',
+        excludedCount: '已排除任务',
     }
 };
 
@@ -1052,9 +1068,13 @@ export default function App() {
         });
     }, [data, filters]);
 
+    // Performance data excludes "Won't fix" and "Pending" tasks
+    const performanceData = useMemo(() => filteredData.filter(d => !isExcludedFromPerformance(d.status)), [filteredData]);
+    const excludedData = useMemo(() => filteredData.filter(d => isExcludedFromPerformance(d.status)), [filteredData]);
+
     const metrics = useMemo(() => {
         let totalWeight = 0, completedWeight = 0, totalDevTime = 0, totalDelayDays = 0, delayedWeight = 0;
-        filteredData.forEach(item => {
+        performanceData.forEach(item => {
             const w = item.weight || 0;
             totalWeight += w;
             if (isDone(item.status)) completedWeight += w;
@@ -1069,11 +1089,11 @@ export default function App() {
             onTimeRate: totalWeight ? (((totalWeight - delayedWeight) / totalWeight) * 100).toFixed(0) : 0,
             delayedTasksCount: Math.round(delayedWeight)
         };
-    }, [filteredData]);
+    }, [performanceData]);
 
     const epicSummary = useMemo(() => {
         const stats = {};
-        filteredData.forEach(item => {
+        performanceData.forEach(item => {
             if (!item.epicLink) return;
             const w = item.weight || 0;
             if (!stats[item.epicLink]) {
@@ -1095,11 +1115,11 @@ export default function App() {
             avgDelay: s.total ? parseFloat((s.totalDelay / s.total).toFixed(1)) : 0,
             onTimeRate: s.total ? Math.round(((s.total - s.delayedCount) / s.total) * 100) : 0
         })).sort((a, b) => b.total - a.total);
-    }, [filteredData, epicMap]);
+    }, [performanceData, epicMap]);
 
     const projectStats = useMemo(() => {
         const stats = {};
-        filteredData.forEach(item => {
+        performanceData.forEach(item => {
             const w = item.weight || 0;
             if (!stats[item.project]) stats[item.project] = { project: item.project, devTime: 0, delayDays: 0, count: 0 };
             stats[item.project].devTime += item.devTime * w;
@@ -1107,18 +1127,18 @@ export default function App() {
             stats[item.project].count += w;
         });
         return Object.values(stats).map(s => ({ project: s.project, avgDevTime: s.count ? parseFloat((s.devTime / s.count).toFixed(1)) : 0, avgDelay: s.count ? parseFloat((s.delayDays / s.count).toFixed(1)) : 0 }));
-    }, [filteredData]);
+    }, [performanceData]);
 
     const assigneeStats = useMemo(() => {
         const stats = {};
-        filteredData.forEach(item => {
+        performanceData.forEach(item => {
             const w = item.weight || 0;
             if (!stats[item.assignee]) stats[item.assignee] = { assignee: item.assignee, tasks: 0, delayDays: 0 };
             stats[item.assignee].tasks += w;
             stats[item.assignee].delayDays += item.delayDays * w;
         });
         return Object.values(stats).map(s => ({ assignee: s.assignee, tasks: Math.round(s.tasks), avgDelay: s.tasks ? parseFloat((s.delayDays / s.tasks).toFixed(1)) : 0 }));
-    }, [filteredData]);
+    }, [performanceData]);
 
     const delayPieData = [
         { name: t.pieOnTime, value: metrics.total - metrics.delayedTasksCount },
@@ -1127,7 +1147,7 @@ export default function App() {
 
     const trendData = useMemo(() => {
         const stats = {};
-        filteredData.forEach(item => {
+        performanceData.forEach(item => {
             const w = item.weight || 0;
             if (item.month === '-') return;
             if (!stats[item.month]) stats[item.month] = { month: item.month, tasks: 0, delay: 0 };
@@ -1135,16 +1155,16 @@ export default function App() {
             stats[item.month].delay += item.delayDays * w;
         });
         return Object.values(stats).sort((a, b) => a.month.localeCompare(b.month)).map(s => ({ ...s, tasks: Math.round(s.tasks), avgDelay: s.tasks ? parseFloat((s.delay / s.tasks).toFixed(1)) : 0 }));
-    }, [filteredData]);
+    }, [performanceData]);
 
     // --- KPI Scorecard Metrics ---
     const kpiMetrics = useMemo(() => {
         let totalWeight = 0, delayedWeight = 0;
-        filteredData.forEach(d => { const w = d.weight || 0; totalWeight += w; if (d.delayDays > 0) delayedWeight += w; });
+        performanceData.forEach(d => { const w = d.weight || 0; totalWeight += w; if (d.delayDays > 0) delayedWeight += w; });
         const onTimeRate = totalWeight ? ((totalWeight - delayedWeight) / totalWeight) * 100 : 0;
 
         // Bug fix timeliness (weighted)
-        const bugs = filteredData.filter(d => d.issueType === 'Bug');
+        const bugs = performanceData.filter(d => d.issueType === 'Bug');
         let bugWeight = 0, onTimeBugWeight = 0;
         bugs.forEach(b => { const w = b.weight || 0; bugWeight += w; if (b.devTime <= 1) onTimeBugWeight += w; });
         const bugFixRate = bugWeight ? (onTimeBugWeight / bugWeight) * 100 : 100;
@@ -1169,14 +1189,14 @@ export default function App() {
                 return {};
             }
             // No date selected (All) - default prev Q vs current Q
-            const quarters = [...new Set(filteredData.map(d => d.quarter).filter(q => q !== '-'))].sort();
+            const quarters = [...new Set(performanceData.map(d => d.quarter).filter(q => q !== '-'))].sort();
             if (quarters.length >= 2) return { prevPeriod: quarters[quarters.length - 2], currPeriod: quarters[quarters.length - 1], periodField: 'quarter' };
             return {};
         })();
         if (currPeriod && prevPeriod && periodField) {
             let currDevSum = 0, currW = 0, prevDevSum = 0, prevW = 0;
-            // Use full data for prev period (it may be outside current filter)
-            const nonEpicData = data.filter(d => d.issueType !== 'Epic');
+            // Use full data for prev period (it may be outside current filter), excluding non-performance statuses
+            const nonEpicData = data.filter(d => d.issueType !== 'Epic' && !isExcludedFromPerformance(d.status));
             const applyNonDateFilters = (d) => {
                 if (filters.statusGroups.length > 0 && !filters.statusGroups.includes(getStatusGroup(d.status))) return false;
                 if (filters.assignees.length > 0 && !filters.assignees.includes(d.assignee)) return false;
@@ -1198,7 +1218,7 @@ export default function App() {
         }
 
         return { onTimeRate, bugFixRate, efficiencyImprovement, bugTotal: Math.round(bugWeight), bugOnTime: Math.round(onTimeBugWeight) };
-    }, [filteredData, data, filters, filterOptions]);
+    }, [performanceData, data, filters, filterOptions]);
 
     // --- Individual KPI Table ---
     const individualKPI = useMemo(() => {
@@ -1220,12 +1240,12 @@ export default function App() {
             if (idx > 0) { compPrev = allPeriods[idx - 1]; compCurr = dv[0]; }
         } else {
             // All - default prev Q vs current Q
-            const quarters = [...new Set(filteredData.map(d => d.quarter).filter(q => q !== '-'))].sort();
+            const quarters = [...new Set(performanceData.map(d => d.quarter).filter(q => q !== '-'))].sort();
             if (quarters.length >= 2) { compField = 'quarter'; compPrev = quarters[quarters.length - 2]; compCurr = quarters[quarters.length - 1]; }
         }
 
-        // Build per-person stats from filteredData
-        filteredData.forEach(item => {
+        // Build per-person stats from performanceData (excludes Won't fix / Pending)
+        performanceData.forEach(item => {
             const w = item.weight || 0;
             if (!byPerson[item.assignee]) byPerson[item.assignee] = { totalW: 0, delayedW: 0, bugW: 0, bugOnTimeW: 0, sprintSum: 0, currDevSum: 0, currW: 0, prevDevSum: 0, prevW: 0 };
             const p = byPerson[item.assignee];
@@ -1240,6 +1260,7 @@ export default function App() {
         if (compPrev && compField) {
             const applyNonDateFilters = (d) => {
                 if (d.issueType === 'Epic') return false;
+                if (isExcludedFromPerformance(d.status)) return false;
                 if (filters.statusGroups.length > 0 && !filters.statusGroups.includes(getStatusGroup(d.status))) return false;
                 if (filters.assignees.length > 0 && !filters.assignees.includes(d.assignee)) return false;
                 if (filters.reporters.length > 0 && !filters.reporters.includes(d.reporter)) return false;
@@ -1280,11 +1301,11 @@ export default function App() {
 
             return { name, total: Math.round(total), onTimeRate, devImprovement, bugFixRate, bugTotal: Math.round(d.bugW), avgSprint, weightedScore, currAvg, prevAvg };
         }).sort((a, b) => b.weightedScore - a.weightedScore);
-    }, [filteredData, data, filters, filterOptions]);
+    }, [performanceData, data, filters, filterOptions]);
 
     // --- Bug Analysis ---
     const bugAnalysisData = useMemo(() => {
-        const bugs = filteredData.filter(d => d.issueType === 'Bug');
+        const bugs = performanceData.filter(d => d.issueType === 'Bug');
         // By priority (weighted)
         const byPriority = {};
         bugs.forEach(b => {
@@ -1306,13 +1327,13 @@ export default function App() {
         const assigneeData = Object.values(byAssignee).map(a => ({ ...a, count: Math.round(a.count) })).sort((a, b) => b.count - a.count);
 
         return { bugs, priorityData, assigneeData };
-    }, [filteredData]);
+    }, [performanceData]);
 
     // --- Efficiency Trend (per person per month) ---
     const efficiencyTrendData = useMemo(() => {
         const byPersonMonth = {};
         const allMonths = new Set();
-        filteredData.forEach(item => {
+        performanceData.forEach(item => {
             const w = item.weight || 0;
             if (item.month === '-') return;
             allMonths.add(item.month);
@@ -1322,7 +1343,7 @@ export default function App() {
             byPersonMonth[key].count += w;
         });
         const months = [...allMonths].sort();
-        const assignees = [...new Set(filteredData.map(d => d.assignee))];
+        const assignees = [...new Set(performanceData.map(d => d.assignee))];
         const chartData = months.map(month => {
             const point = { month };
             assignees.forEach(a => {
@@ -1333,16 +1354,16 @@ export default function App() {
             return point;
         });
         return { chartData, assignees };
-    }, [filteredData]);
+    }, [performanceData]);
 
     // --- Q-over-Q per person ---
     const qoqData = useMemo(() => {
-        const quarters = [...new Set(filteredData.map(d => d.quarter).filter(q => q !== '-'))].sort();
+        const quarters = [...new Set(performanceData.map(d => d.quarter).filter(q => q !== '-'))].sort();
         if (quarters.length < 2) return [];
         const currQ = quarters[quarters.length - 1];
         const prevQ = quarters[quarters.length - 2];
         const byPerson = {};
-        filteredData.forEach(item => {
+        performanceData.forEach(item => {
             const w = item.weight || 0;
             if (!byPerson[item.assignee]) byPerson[item.assignee] = { currDevSum: 0, currW: 0, prevDevSum: 0, prevW: 0 };
             if (item.quarter === currQ) { byPerson[item.assignee].currDevSum += item.devTime * w; byPerson[item.assignee].currW += w; }
@@ -1355,13 +1376,13 @@ export default function App() {
             if (prevAvg && prevAvg > 0 && currAvg !== null) improvement = ((prevAvg - currAvg) / prevAvg) * 100;
             return { name, prevAvg: prevAvg ? parseFloat(prevAvg.toFixed(1)) : null, currAvg: currAvg ? parseFloat(currAvg.toFixed(1)) : null, improvement: improvement !== null ? parseFloat(improvement.toFixed(1)) : null };
         }).filter(d => d.prevAvg !== null || d.currAvg !== null);
-    }, [filteredData]);
+    }, [performanceData]);
 
     // --- Delay Risk ---
     const delayRiskData = useMemo(() => {
         // By priority with severity buckets (weighted)
         const byPriority = {};
-        filteredData.forEach(item => {
+        performanceData.forEach(item => {
             const w = item.weight || 0;
             const p = item.priority || 'None';
             if (!byPriority[p]) byPriority[p] = { priority: p, onTime: 0, d1to3: 0, d3to7: 0, d7plus: 0 };
@@ -1376,7 +1397,7 @@ export default function App() {
 
         // Severity distribution (weighted)
         let onTime = 0, d1to3 = 0, d3to7 = 0, d7plus = 0;
-        filteredData.forEach(item => {
+        performanceData.forEach(item => {
             const w = item.weight || 0;
             if (item.delayDays === 0) onTime += w;
             else if (item.delayDays <= 3) d1to3 += w;
@@ -1391,17 +1412,17 @@ export default function App() {
         ].filter(d => d.value > 0);
 
         // High priority alerts
-        const alerts = filteredData
+        const alerts = performanceData
             .filter(d => ['Highest', 'High', 'Critical'].includes(d.priority) && d.delayDays > 0)
             .sort((a, b) => b.delayDays - a.delayDays)
             .slice(0, 20);
 
         return { priorityData, severityData, alerts };
-    }, [filteredData, t]);
+    }, [performanceData, t]);
 
     // --- Sprint Tracking ---
     const sprintTrackingData = useMemo(() => {
-        const tasksWithSprints = filteredData.filter(d => d.sprintCount > 0);
+        const tasksWithSprints = performanceData.filter(d => d.sprintCount > 0);
 
         // Distribution (weighted)
         const distMap = {};
@@ -1414,7 +1435,7 @@ export default function App() {
 
         // By person (weighted)
         const byPerson = {};
-        filteredData.forEach(d => {
+        performanceData.forEach(d => {
             const w = d.weight || 0;
             if (!byPerson[d.assignee]) byPerson[d.assignee] = { total: 0, count: 0 };
             byPerson[d.assignee].total += (d.sprintCount || 0) * w;
@@ -1426,7 +1447,7 @@ export default function App() {
 
         // By project (weighted)
         const byProject = {};
-        filteredData.forEach(d => {
+        performanceData.forEach(d => {
             const w = d.weight || 0;
             if (!byProject[d.project]) byProject[d.project] = { total: 0, count: 0 };
             byProject[d.project].total += (d.sprintCount || 0) * w;
@@ -1437,14 +1458,14 @@ export default function App() {
         })).sort((a, b) => b.avgSprint - a.avgSprint);
 
         // Multi-sprint tasks (individual rows, no weighting)
-        const multiSprint = filteredData
+        const multiSprint = performanceData
             .filter(d => d.sprintCount >= 3)
             .sort((a, b) => b.sprintCount - a.sprintCount)
             .slice(0, 30);
 
         // Sprint vs Delay correlation (weighted)
         const sprintDelayMap = {};
-        filteredData.forEach(d => {
+        performanceData.forEach(d => {
             const w = d.weight || 0;
             const bucket = d.sprintCount >= 5 ? '5+' : String(d.sprintCount || 0);
             if (!sprintDelayMap[bucket]) sprintDelayMap[bucket] = { totalDelay: 0, count: 0 };
@@ -1456,7 +1477,7 @@ export default function App() {
         })).filter(d => d.count > 0);
 
         return { distribution, personData, projectData, multiSprint, sprintDelayData, hasData: tasksWithSprints.length > 0 };
-    }, [filteredData]);
+    }, [performanceData]);
 
     const dateOptions = filters.dateType === 'weekly' ? filterOptions.weeks : filters.dateType === 'monthly' ? filterOptions.months : filterOptions.quarters;
 
@@ -2461,10 +2482,10 @@ export default function App() {
 
             {/* Data Table - show only parent tasks and standalone tasks (no subtasks) */}
             {(() => {
-                const rawTableData = filteredData.filter(d => !d.parent);
+                const rawTableData = performanceData.filter(d => !d.parent);
                 // Build subtask info for parent tasks
                 const subtaskInfoMap = {};
-                filteredData.forEach(d => {
+                performanceData.forEach(d => {
                     if (d.parent) {
                         if (!subtaskInfoMap[d.parent]) subtaskInfoMap[d.parent] = { total: 0, done: 0, totalDevTime: 0, totalDelay: 0, delayedCount: 0 };
                         const s = subtaskInfoMap[d.parent];
@@ -2599,6 +2620,77 @@ export default function App() {
             </div>
                 );
             })()}
+
+            {/* Non-Performance Effort Table (Won't Fix / Pending) */}
+            {excludedData.length > 0 && (
+                <>
+                <div className={`my-8 border-t ${dark ? 'border-slate-700' : 'border-slate-200'}`} />
+                <div className={`${panel} overflow-hidden border-l-4 border-l-amber-500`}>
+                    <div className={`p-6 border-b flex justify-between items-center ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
+                        <div>
+                            <h3 className={`text-lg font-bold ${dark ? 'text-white' : 'text-slate-800'}`}>
+                                <Layers size={20} className="inline mr-2 text-amber-500" />{t.excludedEffort}
+                            </h3>
+                            <p className={`text-xs mt-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.excludedDesc}</p>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-sm font-bold ${dark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-700'}`}>
+                            {excludedData.filter(d => !d.parent).length} {t.tasks}
+                        </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className={`text-xs uppercase ${dark ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-50 text-slate-700'}`}>
+                                <tr>
+                                    <th className={thClass}>{t.issueKey}</th>
+                                    <th className={thClass}>Sheet</th>
+                                    <th className={thClass}>{t.summary}</th>
+                                    <th className={thClass}>{t.epicCol}</th>
+                                    <th className={thClass}>{t.assignee}</th>
+                                    <th className={thClass}>{t.status}</th>
+                                    <th className={thClass}>{t.dueDate}</th>
+                                    <th className={thClass}>{t.endDate}</th>
+                                    <th className={`${thClass} text-center`}>{t.devDays}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {excludedData.filter(d => !d.parent).slice(0, 50).map((item, index) => (
+                                    <tr key={index} className={`border-b transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
+                                        <td className={`${tdClass} font-medium`}>
+                                            <a href={`${JIRA_BASE}/${item.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-400 hover:underline">{item.id}</a>
+                                        </td>
+                                        <td className={tdClass}>
+                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${dark ? 'bg-slate-600 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{item.sheetName}</span>
+                                        </td>
+                                        <td className={tdClass}>
+                                            <div className="truncate max-w-[200px] lg:max-w-xs" title={item.summary}>{item.summary}</div>
+                                            <div className={`text-xs mt-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{item.project} • {item.fixVersion}</div>
+                                        </td>
+                                        <td className={tdClass}>
+                                            {item.epicLink ? (
+                                                <div>
+                                                    <a href={`${JIRA_BASE}/${item.epicLink}`} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-indigo-400 hover:text-indigo-300 hover:underline">{item.epicLink}</a>
+                                                    <div className={`text-xs truncate max-w-[120px] ${dark ? 'text-slate-500' : 'text-slate-400'}`} title={item.epicName}>{item.epicName}</div>
+                                                </div>
+                                            ) : <span className={dark ? 'text-slate-600' : 'text-slate-300'}>-</span>}
+                                        </td>
+                                        <td className={tdClass}>
+                                            <div>{item.assignee}</div>
+                                            <div className={`text-xs ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.reportedBy}: {item.reporter}</div>
+                                        </td>
+                                        <td className={tdClass}>
+                                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-500/20 text-amber-400">{item.status}</span>
+                                        </td>
+                                        <td className={tdClass}>{formatDate(item.dueDate, lang)}</td>
+                                        <td className={tdClass}>{formatDate(item.endDate, lang)}</td>
+                                        <td className={`${tdClass} text-center`}>{item.devTime}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                </>
+            )}
             </>)}
         </div>
         </main>

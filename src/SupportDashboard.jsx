@@ -184,7 +184,7 @@ const translations = {
         showingFirst: 'Showing',
         of: 'of',
     },
-    cn: {
+    zh: {
         title: 'Platform Support Dashboard',
         subtitle: '分析平台支持工单数据',
         loading: '正在加载支持工单数据...',
@@ -377,9 +377,20 @@ const getSlaTier = (hours) => {
     return SLA_TIERS[SLA_TIERS.length - 1];
 };
 
+// --- Normalize Chinese status values to English ---
+const STATUS_MAP = {
+    '已结束': 'Completed',
+    '审批中': 'Running',
+    '已撤销': 'Terminated',
+    '已拒绝': 'Rejected',
+    '已通过': 'Approved',
+};
+const normalizeStatus = (raw) => STATUS_MAP[raw] || raw;
+
 // --- Status badge colors ---
 const statusColors = {
     'Approved': { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-400' },
+    'Completed': { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-400' },
     'Running': { bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-400' },
     'Terminated': { bg: 'bg-slate-100 dark:bg-slate-700/40', text: 'text-slate-600 dark:text-slate-400' },
     'Rejected': { bg: 'bg-red-100 dark:bg-red-900/40', text: 'text-red-700 dark:text-red-400' },
@@ -449,7 +460,7 @@ const parseSheetData = (parsed, quarterName) => {
             estimatedFixTime: (r[idx.estimatedFixTime] || '').trim(),
             created: (r[idx.created] || '').trim(),
             completed: (r[idx.completed] || '').trim(),
-            status: (r[idx.status] || '').trim(),
+            status: normalizeStatus((r[idx.status] || '').trim()),
             durationStr,
             durationHours,
             creator: (r[idx.creator] || '').trim(),
