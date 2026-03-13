@@ -316,7 +316,7 @@ function MobileFilterSheet({ dark, onClose, onClear, hasFilters, totalActive, se
 }
 
 // --- Constants ---
-const SHEET_ID = '18a2xbNrbGxEaxK8KGCZhbWueqXpMrgxJgspIW42aIn0';
+const SHEET_ID = import.meta.env.VITE_SUPPORT_DB_LINK || '18a2xbNrbGxEaxK8KGCZhbWueqXpMrgxJgspIW42aIn0';
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 const SLA_TIERS = [
     { key: '<1h', max: 1, color: '#10b981', label: '< 1h' },
