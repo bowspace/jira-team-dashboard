@@ -66,7 +66,7 @@ function MultiSelect({ options, selected, onChange, label, dark, epicMap }) {
         <div ref={ref} className="relative">
             <button
                 onClick={() => setOpen(!open)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm border min-w-[130px] max-w-[200px] ${
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs border min-w-[110px] max-w-[180px] ${
                     dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                 } ${!allSelected ? 'ring-2 ring-blue-500/40' : ''}`}
             >
@@ -1645,7 +1645,7 @@ export default function App() {
             {/* Sticky Header + Filters */}
             <div className={`sticky top-0 z-40 -mx-4 px-4 md:-mx-6 md:px-6 pt-2 pb-4 ${dark ? 'bg-slate-900/95 backdrop-blur-sm' : 'bg-slate-50/95 backdrop-blur-sm'}`}>
             {/* Header */}
-            <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center">
+            <div className="mb-4 flex justify-between items-start">
                 <div>
                     <h1 className={`text-2xl md:text-3xl font-bold flex items-center gap-2 md:gap-3 ${dark ? 'text-white' : 'text-slate-900'}`}>
                         {activePage === 'timeline' ? <GanttChart className="text-blue-500" size={28} /> : <Activity className="text-blue-500" size={28} />}
@@ -1653,7 +1653,7 @@ export default function App() {
                     </h1>
                     <p className={`mt-1 text-sm md:text-base ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{activePage === 'timeline' ? t.timelineSubtitle : t.subtitle}</p>
                 </div>
-                <div className="mt-3 md:mt-0 flex items-center gap-2 md:gap-3">
+                <div className="flex items-center gap-2 md:gap-3">
                     {/* Refresh */}
                     <button
                         onClick={() => loadData(false)}
@@ -1689,10 +1689,10 @@ export default function App() {
             </div>
 
             {/* Desktop Filters Bar — hidden on mobile */}
-            <div className={`hidden md:flex ${panel} p-4 flex-wrap gap-3 items-center`}>
-                <div className={`flex items-center gap-2 font-medium mr-1 ${dark ? 'text-slate-400' : 'text-slate-600'}`}>
-                    <Filter size={20} />
-                    {t.filters}:
+            <div className={`hidden md:flex ${panel} p-3 flex-wrap gap-2 items-center text-xs`}>
+                <div className={`flex items-center gap-1.5 font-medium mr-1 ${dark ? 'text-slate-400' : 'text-slate-600'}`}>
+                    <Filter size={16} />
+                    <span className="text-xs">{t.filters}:</span>
                 </div>
 
                 <div className={`flex items-center gap-1 rounded-md p-0.5 ${dark ? 'bg-slate-700' : 'bg-slate-100'}`}>
@@ -1704,7 +1704,7 @@ export default function App() {
                         <button
                             key={dt.key}
                             onClick={() => setFilters(prev => ({ ...prev, dateType: dt.key, dateValues: [] }))}
-                            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                            className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                                 filters.dateType === dt.key
                                     ? 'bg-blue-600 text-white shadow-sm'
                                     : dark ? 'text-slate-400 hover:bg-slate-600' : 'text-slate-600 hover:bg-slate-200'
@@ -1727,18 +1727,18 @@ export default function App() {
                 {activePage === 'timeline' && (
                     <>
                         <div className={`w-px h-6 ${dark ? 'bg-slate-600' : 'bg-slate-300'}`} />
-                        <div className="flex items-center gap-1.5">
-                            <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.minDelay || 'Delay ≤'}:</span>
+                        <div className="flex items-center gap-1">
+                            <span className={`text-xs ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.minDelay || 'Delay ≤'}:</span>
                             <input type="number" min="0" value={timelineMinDelay} onChange={(e) => setTimelineMinDelay(e.target.value)}
                                 placeholder=""
-                                className={`rounded-md px-2 py-1.5 text-sm border outline-none focus:ring-2 focus:ring-blue-500 w-16 ${dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'}`} />
-                            <span className={`text-sm ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.days || 'days'}</span>
+                                className={`rounded-md px-1.5 py-1 text-xs border outline-none focus:ring-2 focus:ring-blue-500 w-14 ${dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'}`} />
+                            <span className={`text-xs ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.days || 'days'}</span>
                         </div>
                     </>
                 )}
 
                 {hasActiveFilters && (
-                    <button onClick={resetFilters} className="text-sm text-blue-500 hover:text-blue-400 underline ml-auto">
+                    <button onClick={resetFilters} className="text-xs text-blue-500 hover:text-blue-400 underline ml-auto">
                         {t.clearFilters}
                     </button>
                 )}

@@ -63,9 +63,12 @@ const ALL_COLUMNS = [
     { key: 'priority', label: 'Priority', minWidth: 60, defaultWidth: 80, getValue: (task) => task.priority || '-' },
     { key: 'devTime', label: 'Dev Days', minWidth: 60, defaultWidth: 70, getValue: (task) => task.devTime },
     { key: 'delayDays', label: 'Delay Days', minWidth: 60, defaultWidth: 70, getValue: (task) => task.delayDays },
+    { key: 'sprint', label: 'Sprint', minWidth: 80, defaultWidth: 120, getValue: (task) => task.sprints?.length > 0 ? task.sprints[task.sprints.length - 1] : '-' },
 ];
 
 const DEFAULT_VISIBLE_COLS = ['id', 'summary', 'assignee', 'startDate', 'dueDate'];
+const MOBILE_VISIBLE_COLS = ['id', 'summary'];
+const isMobile = () => window.innerWidth < 768;
 
 export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t, minDelay, dateType }) {
     const [groupBy, setGroupBy] = useState(['assignee']);
@@ -76,8 +79,9 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
     const [visibleCols, setVisibleCols] = useState(() => {
         try {
             const saved = localStorage.getItem('timeline-columns');
-            return saved ? JSON.parse(saved) : DEFAULT_VISIBLE_COLS;
-        } catch { return DEFAULT_VISIBLE_COLS; }
+            if (saved) return JSON.parse(saved);
+            return isMobile() ? MOBILE_VISIBLE_COLS : DEFAULT_VISIBLE_COLS;
+        } catch { return isMobile() ? MOBILE_VISIBLE_COLS : DEFAULT_VISIBLE_COLS; }
     });
     const [colWidths, setColWidths] = useState(() => {
         try {
@@ -87,6 +91,8 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
     });
     const [showColSettings, setShowColSettings] = useState(false);
     const [showInfo, setShowInfo] = useState(false);
+    const [sortCol, setSortCol] = useState({ key: null, dir: 'asc' });
+    const [showGroupByPanel, setShowGroupByPanel] = useState(false);
     const [resizing, setResizing] = useState(null);
     const scrollRef = useRef(null);
     const containerRef = useRef(null);
@@ -214,7 +220,20 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
             }
         });
 
-        const sortFn = (a, b) => new Date(a.startDate) - new Date(b.startDate);
+        const getSortValue = (task) => {
+            if (!sortCol.key) return new Date(task.startDate).getTime();
+            const col = ALL_COLUMNS.find(c => c.key === sortCol.key);
+            if (!col) return 0;
+            const v = col.getValue(task);
+            if (typeof v === 'number') return v;
+            return String(v || '').toLowerCase();
+        };
+        const sortFn = (a, b) => {
+            const va = getSortValue(a);
+            const vb = getSortValue(b);
+            const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb));
+            return sortCol.dir === 'desc' ? -cmp : cmp;
+        };
         const sortedGroups = Object.keys(groupMap).sort().map(name => {
             if (secondaryField) {
                 const subGroups = Object.keys(groupMap[name]).sort().map(subName => ({
@@ -264,7 +283,7 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
             cols.push(new Date(rStart.getTime() + i * DAY_MS));
         }
         return { groups: sortedGroups, rangeStart: rStart, rangeEnd: rEnd, totalDays: tDays, dateColumns: cols };
-    }, [rangeFilteredData, groupBy, containerWidth, totalFixedWidth, colWidth]);
+    }, [rangeFilteredData, groupBy, containerWidth, totalFixedWidth, colWidth, sortCol]);
 
     const todayStr = new Date().toISOString().split('T')[0];
     const todayPx = ((new Date(todayStr).getTime() - rangeStart.getTime()) / DAY_MS) * colWidth;
@@ -597,14 +616,15 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
 
     return (
         <div className="space-y-3 mt-4">
-            {/* Controls bar */}
-            <div className="flex flex-col gap-2">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        {/* Group by */}
-                        <span className={`text-xs font-medium ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            {t.groupBy || 'Group by'}:
-                        </span>
+            {/* Controls bar — single row: Group by (left) | Zoom + Columns + Today (right) */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+                {/* Left: Group by */}
+                <div className="flex items-center gap-2 flex-wrap">
+                    {/* Group by — desktop */}
+                    <span className={`hidden md:inline text-xs font-medium ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {t.groupBy || 'Group by'}:
+                    </span>
+                    <div className="hidden md:flex items-center gap-1.5 flex-wrap">
                         {groupByOptions.map(opt => {
                             const Icon = opt.icon;
                             const idx = groupBy.indexOf(opt.value);
@@ -622,89 +642,91 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                                 </button>
                             );
                         })}
-
-                        <div className={`w-px h-5 mx-1 ${dark ? 'bg-slate-700' : 'bg-slate-200'}`} />
-
-                        {/* Zoom level presets */}
-                        <span className={`text-xs font-medium ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            Zoom:
-                        </span>
-                        {Object.entries(ZOOM_PRESETS).map(([key, { label }]) => (
-                            <button key={key} onClick={() => changeZoomLevel(key)}
-                                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                    zoomLevel === key ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                }`}>
-                                {label}
-                            </button>
-                        ))}
-
-                        {/* Zoom in/out fine control */}
-                        <div className="flex items-center gap-0.5">
-                            <button onClick={zoomOut} title="Zoom out"
-                                className={`p-1 rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
-                                <ZoomOut size={14} />
-                            </button>
-                            <span className={`text-[10px] min-w-[2rem] text-center tabular-nums ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
-                                {zoomScale}px
-                            </span>
-                            <button onClick={zoomIn} title="Zoom in"
-                                className={`p-1 rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
-                                <ZoomIn size={14} />
-                            </button>
-                        </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                        {/* Column settings */}
-                        <div className="relative" ref={colSettingsRef}>
-                            <button onClick={() => setShowColSettings(prev => !prev)}
-                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                    showColSettings ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                }`}>
-                                <Settings2 size={13} />
-                                {t.columns || 'Columns'}
-                            </button>
-                            {showColSettings && (
-                                <div className={`absolute right-0 top-full mt-1 z-50 rounded-lg shadow-lg border p-2 min-w-[200px] ${
-                                    dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
-                                }`}>
-                                    <p className={`text-[10px] uppercase tracking-wider font-semibold mb-1.5 px-2 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
-                                        {t.visibleColumns || 'Visible Columns'}
-                                    </p>
-                                    {ALL_COLUMNS.map(col => (
-                                        <label key={col.key} className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-xs transition-colors ${
-                                            dark ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
-                                        }`}>
-                                            <input type="checkbox" checked={visibleCols.includes(col.key)} onChange={() => toggleCol(col.key)}
-                                                className="rounded border-slate-300 text-blue-500 focus:ring-blue-500" />
-                                            {getColLabel(col.key)}
-                                        </label>
-                                    ))}
-                                    <div className={`border-t mt-1.5 pt-1.5 px-2 ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
-                                        <button onClick={() => { setVisibleCols(DEFAULT_VISIBLE_COLS); setColWidths({}); }}
-                                            className="text-[10px] text-blue-500 hover:text-blue-400">
-                                            {t.reset || 'Reset'}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Today button */}
-                        <button onClick={() => {
-                            if (scrollRef.current) {
-                                const visW = scrollRef.current.clientWidth - totalFixedWidth;
-                                scrollRef.current.scrollTo({ left: Math.max(0, todayPx - visW / 3), behavior: 'smooth' });
-                            }
-                        }} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                            dark ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50' : 'bg-red-50 text-red-600 hover:bg-red-100'
+                    {/* Group by — mobile icon */}
+                    <button onClick={() => setShowGroupByPanel(true)}
+                        className={`md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         }`}>
-                            <Calendar size={13} />
-                            {t.today || 'Today'}
-                        </button>
-                    </div>
+                        <Layers size={13} />
+                        {t.groupBy || 'Group by'}
+                    </button>
                 </div>
 
+                {/* Right: Zoom + Columns + Today */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Zoom */}
+                    <span className={`text-xs font-medium ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Zoom:</span>
+                    {Object.entries(ZOOM_PRESETS).map(([key, { label }]) => (
+                        <button key={key} onClick={() => changeZoomLevel(key)}
+                            className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                zoomLevel === key ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}>
+                            {label}
+                        </button>
+                    ))}
+                    <div className="flex items-center gap-0.5">
+                        <button onClick={zoomOut} title="Zoom out"
+                            className={`p-1 rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
+                            <ZoomOut size={14} />
+                        </button>
+                        <span className={`text-[10px] min-w-[2rem] text-center tabular-nums ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                            {zoomScale}px
+                        </span>
+                        <button onClick={zoomIn} title="Zoom in"
+                            className={`p-1 rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
+                            <ZoomIn size={14} />
+                        </button>
+                    </div>
+
+                    {/* Column settings */}
+                    <div className="relative" ref={colSettingsRef}>
+                        <button onClick={() => setShowColSettings(prev => !prev)}
+                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                showColSettings ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}>
+                            <Settings2 size={13} />
+                            {t.columns || 'Columns'}
+                        </button>
+                        {showColSettings && (
+                            <div className={`absolute right-0 top-full mt-1 z-50 rounded-lg shadow-lg border p-2 min-w-[200px] ${
+                                dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+                            }`}>
+                                <p className={`text-[10px] uppercase tracking-wider font-semibold mb-1.5 px-2 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                                    {t.visibleColumns || 'Visible Columns'}
+                                </p>
+                                {ALL_COLUMNS.map(col => (
+                                    <label key={col.key} className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-xs transition-colors ${
+                                        dark ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
+                                    }`}>
+                                        <input type="checkbox" checked={visibleCols.includes(col.key)} onChange={() => toggleCol(col.key)}
+                                            className="rounded border-slate-300 text-blue-500 focus:ring-blue-500" />
+                                        {getColLabel(col.key)}
+                                    </label>
+                                ))}
+                                <div className={`border-t mt-1.5 pt-1.5 px-2 ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
+                                    <button onClick={() => { setVisibleCols(isMobile() ? MOBILE_VISIBLE_COLS : DEFAULT_VISIBLE_COLS); setColWidths({}); }}
+                                        className="text-[10px] text-blue-500 hover:text-blue-400">
+                                        {t.reset || 'Reset'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Today button */}
+                    <button onClick={() => {
+                        if (scrollRef.current) {
+                            const visW = scrollRef.current.clientWidth - totalFixedWidth;
+                            scrollRef.current.scrollTo({ left: Math.max(0, todayPx - visW / 3), behavior: 'smooth' });
+                        }
+                    }} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        dark ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50' : 'bg-red-50 text-red-600 hover:bg-red-100'
+                    }`}>
+                        <Calendar size={13} />
+                        {t.today || 'Today'}
+                    </button>
+                </div>
             </div>
 
             {/* Gantt Chart */}
@@ -719,17 +741,26 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                     <div className="flex" style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                         <div className={`shrink-0 flex border-b border-r ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
                             style={{ width: totalFixedWidth, height: headerHeight }}>
-                            {activeCols.map((col) => (
+                            {activeCols.map((col) => {
+                                const isSorted = sortCol.key === col.key;
+                                return (
                                 <div key={col.key}
-                                    className={`relative flex items-center px-2 text-xs font-semibold uppercase tracking-wider select-none ${dark ? 'text-slate-400' : 'text-slate-500'}`}
-                                    style={{ width: getColWidth(col.key), minWidth: col.minWidth }}>
+                                    className={`relative flex items-center px-2 text-xs font-semibold uppercase tracking-wider select-none cursor-pointer hover:opacity-80 ${
+                                        isSorted ? (dark ? 'text-blue-400' : 'text-blue-600') : dark ? 'text-slate-400' : 'text-slate-500'
+                                    }`}
+                                    style={{ width: getColWidth(col.key), minWidth: col.minWidth }}
+                                    onClick={() => setSortCol(prev => prev.key === col.key ? { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: col.key, dir: 'asc' })}>
                                     <span className="truncate">{getColLabel(col.key)}</span>
+                                    {isSorted && (
+                                        <span className="ml-0.5 text-[9px]">{sortCol.dir === 'asc' ? '▲' : '▼'}</span>
+                                    )}
                                     <div className={`absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize group flex items-center justify-center hover:bg-blue-500/30 ${resizing === col.key ? 'bg-blue-500/40' : ''}`}
-                                        onMouseDown={(e) => handleResizeStart(e, col.key)}>
+                                        onMouseDown={(e) => { e.stopPropagation(); handleResizeStart(e, col.key); }}>
                                         <div className={`w-px h-4 ${dark ? 'bg-slate-600 group-hover:bg-blue-400' : 'bg-slate-300 group-hover:bg-blue-500'}`} />
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                         <div ref={headerScrollRef} className="flex-1 overflow-hidden relative"
                             style={{ height: headerHeight }}>
@@ -887,6 +918,43 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                     {rangeFilteredData.length} {t.tasks || 'tasks'}
                 </span>
             </div>
+
+            {/* Mobile Group By Bottom Panel */}
+            {showGroupByPanel && (
+                <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 md:hidden" onClick={() => setShowGroupByPanel(false)}>
+                    <div className={`w-full rounded-t-2xl shadow-2xl border-t p-4 pb-8 ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+                        onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className={`text-sm font-bold ${dark ? 'text-slate-200' : 'text-slate-700'}`}>{t.groupBy || 'Group by'}</h3>
+                            <button onClick={() => setShowGroupByPanel(false)} className={`p-1 rounded-lg ${dark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-100'}`}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <p className={`text-[11px] mb-3 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                            {lang === 'th' ? 'เลือกได้สูงสุด 2 กลุ่ม' : 'Select up to 2 groups'}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {groupByOptions.map(opt => {
+                                const Icon = opt.icon;
+                                const idx = groupBy.indexOf(opt.value);
+                                const active = idx >= 0;
+                                return (
+                                    <button key={opt.value} onClick={() => toggleGroupBy(opt.value)}
+                                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                            active ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'
+                                        }`}>
+                                        <Icon size={15} />
+                                        {opt.label}
+                                        {active && groupBy.length > 1 && (
+                                            <span className="ml-0.5 w-5 h-5 rounded-full bg-white/25 flex items-center justify-center text-[10px] font-bold">{idx + 1}</span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Info Modal — Per-Status Behavior */}
             {showInfo && (
