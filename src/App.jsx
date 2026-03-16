@@ -287,6 +287,7 @@ const translations = {
         allReporters: 'ผู้แจ้งทั้งหมด',
         allVersions: 'ทุกเวอร์ชั่น',
         allEpics: 'ทุก Epic',
+        allSprints: 'ทุก Sprint',
         allStatuses: 'ทุกสถานะ',
         clearFilters: 'ล้างตัวกรอง',
         totalTasks: 'จำนวนงานทั้งหมด',
@@ -424,6 +425,7 @@ const translations = {
         allReporters: 'All Reporters',
         allVersions: 'All Versions',
         allEpics: 'All Epics',
+        allSprints: 'All Sprints',
         allStatuses: 'All Statuses',
         clearFilters: 'Clear filters',
         totalTasks: 'Total Tasks',
@@ -556,6 +558,7 @@ const translations = {
         allReporters: '所有报告人',
         allVersions: '所有版本',
         allEpics: '所有 Epic',
+        allSprints: '所有 Sprint',
         allStatuses: '所有状态',
         clearFilters: '清除筛选',
         totalTasks: '任务总数',
@@ -857,7 +860,8 @@ export default function App() {
             reporters: [],
             projects: [],
             fixVersions: [],
-            epicLinks: []
+            epicLinks: [],
+            sprints: []
         };
     });
 
@@ -1075,7 +1079,7 @@ export default function App() {
     }, [loadData]);
 
     const filterOptions = useMemo(() => {
-        const opts = { weeks: new Set(), months: new Set(), quarters: new Set(), assignees: new Set(), reporters: new Set(), projects: new Set(), fixVersions: new Set(), epicLinks: new Set() };
+        const opts = { weeks: new Set(), months: new Set(), quarters: new Set(), assignees: new Set(), reporters: new Set(), projects: new Set(), fixVersions: new Set(), epicLinks: new Set(), sprints: new Set() };
         data.forEach(item => {
             if (item.week && item.week !== '-') opts.weeks.add(item.week);
             if (item.month && item.month !== '-') opts.months.add(item.month);
@@ -1085,6 +1089,7 @@ export default function App() {
             if (item.project && item.project !== 'Unknown') opts.projects.add(item.project);
             if (item.fixVersion && item.fixVersion !== 'N/A') opts.fixVersions.add(item.fixVersion);
             if (item.epicLink) opts.epicLinks.add(item.epicLink);
+            if (item.sprints) item.sprints.forEach(s => { if (s) opts.sprints.add(s); });
         });
         return {
             weeks: Array.from(opts.weeks).sort(),
@@ -1094,7 +1099,8 @@ export default function App() {
             reporters: Array.from(opts.reporters).sort(),
             projects: Array.from(opts.projects).sort(),
             fixVersions: Array.from(opts.fixVersions).sort(),
-            epicLinks: Array.from(opts.epicLinks).sort()
+            epicLinks: Array.from(opts.epicLinks).sort(),
+            sprints: Array.from(opts.sprints).sort()
         };
     }, [data]);
 
@@ -1111,6 +1117,7 @@ export default function App() {
             if (filters.projects.length > 0 && !filters.projects.includes(item.project)) return false;
             if (filters.fixVersions.length > 0 && !filters.fixVersions.includes(item.fixVersion)) return false;
             if (filters.epicLinks.length > 0 && !filters.epicLinks.includes(item.epicLink)) return false;
+            if (filters.sprints.length > 0 && !item.sprints.some(s => filters.sprints.includes(s))) return false;
             return true;
         });
     }, [data, filters]);
@@ -1528,8 +1535,8 @@ export default function App() {
 
     const dateOptions = filters.dateType === 'weekly' ? filterOptions.weeks : filters.dateType === 'monthly' ? filterOptions.months : filterOptions.quarters;
 
-    const resetFilters = () => { setFilters({ dateType: 'quarter', dateValues: [], statusGroups: [], assignees: [], reporters: [], projects: [], fixVersions: [], epicLinks: [] }); setTimelineMinDelay(''); };
-    const hasActiveFilters = filters.dateValues.length > 0 || filters.statusGroups.length > 0 || filters.assignees.length > 0 || filters.reporters.length > 0 || filters.projects.length > 0 || filters.fixVersions.length > 0 || filters.epicLinks.length > 0 || timelineMinDelay !== '';
+    const resetFilters = () => { setFilters({ dateType: 'quarter', dateValues: [], statusGroups: [], assignees: [], reporters: [], projects: [], fixVersions: [], epicLinks: [], sprints: [] }); setTimelineMinDelay(''); };
+    const hasActiveFilters = filters.dateValues.length > 0 || filters.statusGroups.length > 0 || filters.assignees.length > 0 || filters.reporters.length > 0 || filters.projects.length > 0 || filters.fixVersions.length > 0 || filters.epicLinks.length > 0 || filters.sprints.length > 0 || timelineMinDelay !== '';
 
     if (loading) {
         return <div className={`flex h-screen items-center justify-center ${dark ? 'bg-slate-900 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>{t.loading}</div>;
@@ -1715,6 +1722,7 @@ export default function App() {
                 <MultiSelect options={filterOptions.reporters} selected={filters.reporters} onChange={(v) => setFilters(prev => ({ ...prev, reporters: v }))} label={t.allReporters} dark={dark} />
                 <MultiSelect options={filterOptions.fixVersions} selected={filters.fixVersions} onChange={(v) => setFilters(prev => ({ ...prev, fixVersions: v }))} label={t.allVersions} dark={dark} />
                 <MultiSelect options={filterOptions.epicLinks} selected={filters.epicLinks} onChange={(v) => setFilters(prev => ({ ...prev, epicLinks: v }))} label={t.allEpics} dark={dark} epicMap={epicMap} />
+                <MultiSelect options={filterOptions.sprints} selected={filters.sprints} onChange={(v) => setFilters(prev => ({ ...prev, sprints: v }))} label={t.allSprints || 'All Sprints'} dark={dark} />
 
                 {activePage === 'timeline' && (
                     <>
@@ -1765,6 +1773,7 @@ export default function App() {
                         { title: t.allReporters, key: 'reporters', options: filterOptions.reporters, selected: filters.reporters, onChange: (v) => setFilters(prev => ({ ...prev, reporters: v })) },
                         { title: t.allVersions, key: 'fixVersions', options: filterOptions.fixVersions, selected: filters.fixVersions, onChange: (v) => setFilters(prev => ({ ...prev, fixVersions: v })) },
                         { title: t.allEpics, key: 'epicLinks', options: filterOptions.epicLinks, selected: filters.epicLinks, onChange: (v) => setFilters(prev => ({ ...prev, epicLinks: v })), epicMap },
+                        { title: t.allSprints || 'All Sprints', key: 'sprints', options: filterOptions.sprints, selected: filters.sprints, onChange: (v) => setFilters(prev => ({ ...prev, sprints: v })) },
                     ]}
                 />
             )}

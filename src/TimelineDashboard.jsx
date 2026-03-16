@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Users, Briefcase, Layers, Calendar, Settings2, ZoomIn, ZoomOut, CheckCircle, Info, X } from 'lucide-react';
+import { Users, Briefcase, Layers, Calendar, Settings2, ZoomIn, ZoomOut, CheckCircle, Info, X, Bug, LayoutList, Repeat } from 'lucide-react';
 
 const JIRA_BASE = 'https://jira2.my-group.net/browse';
 const DAY_MS = 86400000;
@@ -68,7 +68,7 @@ const ALL_COLUMNS = [
 const DEFAULT_VISIBLE_COLS = ['id', 'summary', 'assignee', 'startDate', 'dueDate'];
 
 export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t, minDelay, dateType }) {
-    const [groupBy, setGroupBy] = useState('assignee');
+    const [groupBy, setGroupBy] = useState(['assignee']);
     const [zoomLevel, setZoomLevel] = useState('month');
     const [zoomScale, setZoomScale] = useState(ZOOM_PRESETS.month.colWidth);
     const [tooltip, setTooltip] = useState(null);
@@ -182,26 +182,50 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
         });
     }, [filteredData, minDelay]);
 
-    // Grouped & sorted data
+    const getGroupKey = (task, field) => {
+        if (field === 'assignee') return task.assignee || 'Unassigned';
+        if (field === 'project') return task.project || 'Unknown';
+        if (field === 'status') return getStatusGroup(task.status);
+        if (field === 'epic') return task.epicName || task.epicLink || 'No Epic';
+        if (field === 'issueType') return task.issueType || 'Unknown';
+        if (field === 'sprint') return (task.sprints && task.sprints.length > 0) ? task.sprints[task.sprints.length - 1] : 'No Sprint';
+        return 'Unknown';
+    };
+
+    // Grouped & sorted data (supports 1-2 levels of grouping)
     const { groups, rangeStart, rangeEnd, totalDays, dateColumns } = useMemo(() => {
         const tasks = rangeFilteredData.filter(d => d.startDate && d.endDate);
         if (tasks.length === 0) return { groups: [], rangeStart: new Date(), rangeEnd: new Date(), totalDays: 1, dateColumns: [] };
 
+        const primaryField = groupBy[0];
+        const secondaryField = groupBy.length > 1 ? groupBy[1] : null;
+
         const groupMap = {};
         tasks.forEach(task => {
-            let key;
-            if (groupBy === 'assignee') key = task.assignee || 'Unassigned';
-            else if (groupBy === 'project') key = task.project || 'Unknown';
-            else if (groupBy === 'status') key = getStatusGroup(task.status);
-            else key = task.epicName || task.epicLink || 'No Epic';
-            if (!groupMap[key]) groupMap[key] = [];
-            groupMap[key].push(task);
+            const key = getGroupKey(task, primaryField);
+            if (!groupMap[key]) groupMap[key] = {};
+            if (secondaryField) {
+                const subKey = getGroupKey(task, secondaryField);
+                if (!groupMap[key][subKey]) groupMap[key][subKey] = [];
+                groupMap[key][subKey].push(task);
+            } else {
+                if (!groupMap[key].__tasks) groupMap[key].__tasks = [];
+                groupMap[key].__tasks.push(task);
+            }
         });
 
-        const sortedGroups = Object.keys(groupMap).sort().map(name => ({
-            name,
-            tasks: groupMap[name].sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
-        }));
+        const sortFn = (a, b) => new Date(a.startDate) - new Date(b.startDate);
+        const sortedGroups = Object.keys(groupMap).sort().map(name => {
+            if (secondaryField) {
+                const subGroups = Object.keys(groupMap[name]).sort().map(subName => ({
+                    name: subName,
+                    tasks: groupMap[name][subName].sort(sortFn)
+                }));
+                const allTasks = subGroups.flatMap(sg => sg.tasks);
+                return { name, subGroups, tasks: allTasks };
+            }
+            return { name, subGroups: null, tasks: (groupMap[name].__tasks || []).sort(sortFn) };
+        });
 
         let minDate = Infinity, maxDate = -Infinity;
         tasks.forEach(tk => {
@@ -298,7 +322,25 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
         { value: 'project', label: 'Project', icon: Briefcase },
         { value: 'epic', label: 'Epic', icon: Layers },
         { value: 'status', label: t.status || 'Status', icon: CheckCircle },
+        { value: 'issueType', label: 'Issue Type', icon: LayoutList },
+        { value: 'sprint', label: 'Sprint', icon: Repeat },
     ];
+
+    const toggleGroupBy = (value) => {
+        setGroupBy(prev => {
+            if (prev.includes(value)) {
+                // Remove — but keep at least 1
+                const next = prev.filter(v => v !== value);
+                return next.length > 0 ? next : prev;
+            }
+            if (prev.length >= 2) {
+                // Replace the second one
+                return [prev[0], value];
+            }
+            return [...prev, value];
+        });
+        setCollapsedGroups({});
+    };
 
     const getColLabel = (key) => {
         const map = {
@@ -416,6 +458,31 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
     };
 
     const activeCols = useMemo(() => visibleCols.map(key => ALL_COLUMNS.find(c => c.key === key)).filter(Boolean), [visibleCols]);
+
+    const renderTaskRow = (task) => (
+        <div key={task.id}
+            className={`flex items-center border-b text-xs ${dark ? 'border-slate-700/50' : 'border-slate-50'}`}
+            style={{ height: ROW_HEIGHT }}>
+            {activeCols.map(col => (
+                <div key={col.key}
+                    className={`px-2 truncate ${
+                        col.key === 'id' ? `font-mono ${dark ? 'text-blue-400' : 'text-blue-600'}`
+                        : col.key === 'status' ? 'flex items-center gap-1'
+                        : col.key === 'delayDays' && task.delayDays > 0 && task.devTime !== task.delayDays ? 'text-red-500 font-medium'
+                        : dark ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                    style={{ width: getColWidth(col.key), minWidth: col.minWidth }}
+                    title={String(col.getValue(task))}>
+                    {col.key === 'id' ? (
+                        <a href={`${JIRA_BASE}/${task.id}`} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{task.id}</a>
+                    ) : col.key === 'status' ? (
+                        <><span className={`w-2 h-2 rounded-full shrink-0 ${getStatusColor(task.status).bg}`} />
+                        <span className="truncate">{task.status}</span></>
+                    ) : col.getValue(task)}
+                </div>
+            ))}
+        </div>
+    );
 
     // Render a task bar with delay visualization
     const renderTaskBar = (task) => {
@@ -540,14 +607,18 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                         </span>
                         {groupByOptions.map(opt => {
                             const Icon = opt.icon;
-                            const active = groupBy === opt.value;
+                            const idx = groupBy.indexOf(opt.value);
+                            const active = idx >= 0;
                             return (
-                                <button key={opt.value} onClick={() => setGroupBy(opt.value)}
+                                <button key={opt.value} onClick={() => toggleGroupBy(opt.value)}
                                     className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                         active ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                     }`}>
                                     <Icon size={13} />
                                     {opt.label}
+                                    {active && groupBy.length > 1 && (
+                                        <span className="ml-0.5 w-4 h-4 rounded-full bg-white/25 flex items-center justify-center text-[9px] font-bold">{idx + 1}</span>
+                                    )}
                                 </button>
                             );
                         })}
@@ -692,36 +763,30 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                                                 dark ? 'border-slate-700 text-slate-200 hover:bg-slate-700/50 bg-slate-750' : 'border-slate-100 text-slate-700 hover:bg-slate-50 bg-slate-50'
                                             }`} style={{ height: ROW_HEIGHT }}>
                                             <span className={`text-[9px] transition-transform ${collapsedGroups[group.name] ? '' : 'rotate-90'}`}>▶</span>
-                                            {groupBy === 'status' && (
+                                            {groupBy.includes('status') && groupBy[0] === 'status' && (
                                                 <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${(STATUS_COLORS[group.name] || STATUS_COLORS['In Progress']).bg}`} />
                                             )}
                                             <span className="truncate">{group.name}</span>
                                             <span className={`ml-auto text-[10px] ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{group.tasks.length}</span>
                                         </button>
-                                        {!collapsedGroups[group.name] && group.tasks.map(task => (
-                                            <div key={task.id}
-                                                className={`flex items-center border-b text-xs ${dark ? 'border-slate-700/50' : 'border-slate-50'}`}
-                                                style={{ height: ROW_HEIGHT }}>
-                                                {activeCols.map(col => (
-                                                    <div key={col.key}
-                                                        className={`px-2 truncate ${
-                                                            col.key === 'id' ? `font-mono ${dark ? 'text-blue-400' : 'text-blue-600'}`
-                                                            : col.key === 'status' ? 'flex items-center gap-1'
-                                                            : col.key === 'delayDays' && task.delayDays > 0 && task.devTime !== task.delayDays ? 'text-red-500 font-medium'
-                                                            : dark ? 'text-slate-400' : 'text-slate-500'
-                                                        }`}
-                                                        style={{ width: getColWidth(col.key), minWidth: col.minWidth }}
-                                                        title={String(col.getValue(task))}>
-                                                        {col.key === 'id' ? (
-                                                            <a href={`${JIRA_BASE}/${task.id}`} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{task.id}</a>
-                                                        ) : col.key === 'status' ? (
-                                                            <><span className={`w-2 h-2 rounded-full shrink-0 ${getStatusColor(task.status).bg}`} />
-                                                            <span className="truncate">{task.status}</span></>
-                                                        ) : col.getValue(task)}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ))}
+                                        {!collapsedGroups[group.name] && (
+                                            group.subGroups ? group.subGroups.map(sub => (
+                                                <div key={`${group.name}::${sub.name}`}>
+                                                    <button onClick={() => toggleGroup(`${group.name}::${sub.name}`)}
+                                                        className={`w-full text-left px-2 pl-5 flex items-center gap-1.5 text-[11px] font-medium border-b transition-colors ${
+                                                            dark ? 'border-slate-700/70 text-slate-300 hover:bg-slate-700/30 bg-slate-800/80' : 'border-slate-100 text-slate-600 hover:bg-slate-50/80 bg-slate-25'
+                                                        }`} style={{ height: ROW_HEIGHT }}>
+                                                        <span className={`text-[8px] transition-transform ${collapsedGroups[`${group.name}::${sub.name}`] ? '' : 'rotate-90'}`}>▶</span>
+                                                        {groupBy[1] === 'status' && (
+                                                            <span className={`w-2 h-2 rounded-full shrink-0 ${(STATUS_COLORS[sub.name] || STATUS_COLORS['In Progress']).bg}`} />
+                                                        )}
+                                                        <span className="truncate">{sub.name}</span>
+                                                        <span className={`ml-auto text-[10px] ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{sub.tasks.length}</span>
+                                                    </button>
+                                                    {!collapsedGroups[`${group.name}::${sub.name}`] && sub.tasks.map(task => renderTaskRow(task))}
+                                                </div>
+                                            )) : group.tasks.map(task => renderTaskRow(task))
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -731,7 +796,14 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                                 {groups.map(group => (
                                     <div key={group.name}>
                                         <div className={`border-b ${dark ? 'bg-slate-750 border-slate-700' : 'bg-slate-50 border-slate-100'}`} style={{ height: ROW_HEIGHT }} />
-                                        {!collapsedGroups[group.name] && group.tasks.map(task => renderTaskBar(task))}
+                                        {!collapsedGroups[group.name] && (
+                                            group.subGroups ? group.subGroups.map(sub => (
+                                                <div key={`${group.name}::${sub.name}`}>
+                                                    <div className={`border-b ${dark ? 'bg-slate-800/80 border-slate-700/70' : 'bg-slate-25 border-slate-100'}`} style={{ height: ROW_HEIGHT }} />
+                                                    {!collapsedGroups[`${group.name}::${sub.name}`] && sub.tasks.map(task => renderTaskBar(task))}
+                                                </div>
+                                            )) : group.tasks.map(task => renderTaskBar(task))
+                                        )}
                                     </div>
                                 ))}
 
