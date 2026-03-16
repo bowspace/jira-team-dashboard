@@ -5,6 +5,15 @@ const JIRA_BASE = 'https://jira2.my-group.net/browse';
 const DAY_MS = 86400000;
 const ROW_HEIGHT = 36;
 const HEADER_HEIGHT = 52;
+const HEADER_HEIGHT_WITH_WEEKS = 68;
+
+// ISO week number
+const getISOWeek = (date) => {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / DAY_MS) + 1) / 7);
+};
 const MIN_COL_WIDTH = 40;
 
 const ZOOM_PRESETS = {
@@ -58,7 +67,7 @@ const ALL_COLUMNS = [
 
 const DEFAULT_VISIBLE_COLS = ['id', 'summary', 'assignee', 'startDate', 'dueDate'];
 
-export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t, minDelay }) {
+export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t, minDelay, dateType }) {
     const [groupBy, setGroupBy] = useState('assignee');
     const [zoomLevel, setZoomLevel] = useState('month');
     const [zoomScale, setZoomScale] = useState(ZOOM_PRESETS.month.colWidth);
@@ -236,6 +245,8 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
     const todayStr = new Date().toISOString().split('T')[0];
     const todayPx = ((new Date(todayStr).getTime() - rangeStart.getTime()) / DAY_MS) * colWidth;
     const totalWidth = totalDays * colWidth;
+    const showWeekRow = zoomLevel === 'day' && dateType === 'weekly';
+    const headerHeight = showWeekRow ? HEADER_HEIGHT_WITH_WEEKS : HEADER_HEIGHT;
 
     // Auto-scroll to today on mount/zoom change
     useEffect(() => {
@@ -303,7 +314,20 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
     // Render date header
     const renderDateHeader = () => {
         if (zoomLevel === 'day') {
-            return dateColumns.map((d, i) => {
+            // Build week groups for the week row
+            const weeks = [];
+            if (showWeekRow) {
+                let cur = null;
+                dateColumns.forEach((d) => {
+                    const wk = getISOWeek(d);
+                    const yr = d.getFullYear();
+                    const key = `${yr}-W${wk}`;
+                    if (cur?.key !== key) { cur = { key, week: wk, days: 0 }; weeks.push(cur); }
+                    cur.days++;
+                });
+            }
+
+            const dayRow = dateColumns.map((d, i) => {
                 const isFirstOfMonth = d.getDate() === 1;
                 const isToday = d.toISOString().split('T')[0] === todayStr;
                 const isWeekend = d.getDay() === 0 || d.getDay() === 6;
@@ -323,6 +347,31 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                     </div>
                 );
             });
+
+            if (showWeekRow) {
+                return (
+                    <div className="flex flex-col" style={{ width: totalWidth }}>
+                        {/* Week row */}
+                        <div className="flex" style={{ height: 16 }}>
+                            {weeks.map((w) => (
+                                <div key={w.key}
+                                    className={`shrink-0 flex items-center justify-center text-[9px] font-semibold border-r border-b ${
+                                        dark ? 'border-slate-700/50 text-blue-400 bg-slate-800/80' : 'border-slate-200 text-blue-600 bg-slate-50/80'
+                                    }`}
+                                    style={{ width: w.days * colWidth }}>
+                                    W{w.week}
+                                </div>
+                            ))}
+                        </div>
+                        {/* Day row */}
+                        <div className="flex" style={{ flex: 1 }}>
+                            {dayRow}
+                        </div>
+                    </div>
+                );
+            }
+
+            return dayRow;
         }
         if (zoomLevel === 'month') {
             const months = [];
@@ -598,7 +647,7 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                     {/* Sticky column headers row */}
                     <div className="flex" style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                         <div className={`shrink-0 flex border-b border-r ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
-                            style={{ width: totalFixedWidth, height: HEADER_HEIGHT }}>
+                            style={{ width: totalFixedWidth, height: headerHeight }}>
                             {activeCols.map((col) => (
                                 <div key={col.key}
                                     className={`relative flex items-center px-2 text-xs font-semibold uppercase tracking-wider select-none ${dark ? 'text-slate-400' : 'text-slate-500'}`}
@@ -611,11 +660,19 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                                 </div>
                             ))}
                         </div>
-                        <div ref={headerScrollRef} className="flex-1 overflow-hidden"
-                            style={{ height: HEADER_HEIGHT }}>
+                        <div ref={headerScrollRef} className="flex-1 overflow-hidden relative"
+                            style={{ height: headerHeight }}>
                             <div className={`flex border-b ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
-                                style={{ width: totalWidth, height: HEADER_HEIGHT }}>
+                                style={{ width: totalWidth, height: headerHeight, position: 'relative' }}>
                                 {renderDateHeader()}
+                                {/* Today marker in header */}
+                                {todayPx > 0 && todayPx < totalWidth && (
+                                    <div className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-[2] pointer-events-none" style={{ left: todayPx }}>
+                                        <div className="absolute -top-0 -left-2.5 bg-red-500 text-white text-[9px] px-1 rounded-b font-bold">
+                                            {t.today || 'Today'}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -678,13 +735,9 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                                     </div>
                                 ))}
 
-                                {/* Today line */}
+                                {/* Today line (badge is in sticky header) */}
                                 {todayPx > 0 && todayPx < totalWidth && (
-                                    <div className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-[5] pointer-events-none" style={{ left: todayPx }}>
-                                        <div className="absolute -top-0 -left-2.5 bg-red-500 text-white text-[9px] px-1 rounded-b font-bold">
-                                            {t.today || 'Today'}
-                                        </div>
-                                    </div>
+                                    <div className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-[5] pointer-events-none" style={{ left: todayPx }} />
                                 )}
                             </div>
                         </div>

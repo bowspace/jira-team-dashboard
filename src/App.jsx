@@ -1769,7 +1769,7 @@ export default function App() {
                 />
             )}
 
-            {activePage === 'timeline' && <TimelineDashboard dark={dark} lang={lang} filteredData={filteredData} epicMap={epicMap} t={t} minDelay={timelineMinDelay} />}
+            {activePage === 'timeline' && <TimelineDashboard dark={dark} lang={lang} filteredData={filteredData} epicMap={epicMap} t={t} minDelay={timelineMinDelay} dateType={filters.dateType} />}
             </>
             )}
 
