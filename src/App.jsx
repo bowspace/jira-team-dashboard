@@ -397,6 +397,8 @@ const translations = {
         noData: 'ไม่มีข้อมูลที่จะแสดง',
         columns: 'คอลัมน์',
         visibleColumns: 'คอลัมน์ที่แสดง',
+        lastUpdated: 'อัพเดทล่าสุด',
+        minDelay: 'Delay ≤',
         dateRange: 'ช่วงวันที่',
         lightMode: 'Light',
         darkMode: 'Dark',
@@ -527,6 +529,8 @@ const translations = {
         noData: 'No tasks to display',
         columns: 'Columns',
         visibleColumns: 'Visible Columns',
+        lastUpdated: 'Last Updated',
+        minDelay: 'Delay ≤',
         dateRange: 'Date range',
         lightMode: 'Light',
         darkMode: 'Dark',
@@ -657,6 +661,8 @@ const translations = {
         noData: '没有可显示的任务',
         columns: '列',
         visibleColumns: '可见列',
+        lastUpdated: '最后更新',
+        minDelay: '延迟 ≤',
         dateRange: '日期范围',
         lightMode: '浅色',
         darkMode: '深色',
@@ -808,8 +814,7 @@ export default function App() {
         return 'jira';
     };
     const [activePage, setActivePageState] = useState(getPageFromPath);
-    const [timelineDateRangeStart, setTimelineDateRangeStart] = useState('');
-    const [timelineDateRangeEnd, setTimelineDateRangeEnd] = useState('');
+    const [timelineMinDelay, setTimelineMinDelay] = useState('');
     const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     const setActivePage = (page) => {
         const pathMap = { jira: '/', support: '/support', timeline: '/timeline' };
@@ -1523,8 +1528,8 @@ export default function App() {
 
     const dateOptions = filters.dateType === 'weekly' ? filterOptions.weeks : filters.dateType === 'monthly' ? filterOptions.months : filterOptions.quarters;
 
-    const resetFilters = () => setFilters({ dateType: 'quarter', dateValues: [], statusGroups: [], assignees: [], reporters: [], projects: [], fixVersions: [], epicLinks: [] });
-    const hasActiveFilters = filters.dateValues.length > 0 || filters.statusGroups.length > 0 || filters.assignees.length > 0 || filters.reporters.length > 0 || filters.projects.length > 0 || filters.fixVersions.length > 0 || filters.epicLinks.length > 0;
+    const resetFilters = () => { setFilters({ dateType: 'quarter', dateValues: [], statusGroups: [], assignees: [], reporters: [], projects: [], fixVersions: [], epicLinks: [] }); setTimelineMinDelay(''); };
+    const hasActiveFilters = filters.dateValues.length > 0 || filters.statusGroups.length > 0 || filters.assignees.length > 0 || filters.reporters.length > 0 || filters.projects.length > 0 || filters.fixVersions.length > 0 || filters.epicLinks.length > 0 || timelineMinDelay !== '';
 
     if (loading) {
         return <div className={`flex h-screen items-center justify-center ${dark ? 'bg-slate-900 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>{t.loading}</div>;
@@ -1715,19 +1720,11 @@ export default function App() {
                     <>
                         <div className={`w-px h-6 ${dark ? 'bg-slate-600' : 'bg-slate-300'}`} />
                         <div className="flex items-center gap-1.5">
-                            <Calendar size={14} className={dark ? 'text-slate-400' : 'text-slate-500'} />
-                            <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.dateRange || 'Date range'}:</span>
-                            <input type="date" value={timelineDateRangeStart} onChange={(e) => setTimelineDateRangeStart(e.target.value)}
-                                className={`rounded-md px-2 py-1.5 text-sm border outline-none focus:ring-2 focus:ring-blue-500 ${dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'}`} />
-                            <span className={`text-sm ${dark ? 'text-slate-500' : 'text-slate-400'}`}>—</span>
-                            <input type="date" value={timelineDateRangeEnd} onChange={(e) => setTimelineDateRangeEnd(e.target.value)}
-                                className={`rounded-md px-2 py-1.5 text-sm border outline-none focus:ring-2 focus:ring-blue-500 ${dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'}`} />
-                            {(timelineDateRangeStart || timelineDateRangeEnd) && (
-                                <button onClick={() => { setTimelineDateRangeStart(''); setTimelineDateRangeEnd(''); }}
-                                    className="text-xs text-blue-500 hover:text-blue-400 underline">
-                                    {t.clearFilters}
-                                </button>
-                            )}
+                            <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.minDelay || 'Delay ≤'}:</span>
+                            <input type="number" min="0" value={timelineMinDelay} onChange={(e) => setTimelineMinDelay(e.target.value)}
+                                placeholder=""
+                                className={`rounded-md px-2 py-1.5 text-sm border outline-none focus:ring-2 focus:ring-blue-500 w-16 ${dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'}`} />
+                            <span className={`text-sm ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.days || 'days'}</span>
                         </div>
                     </>
                 )}
@@ -1772,7 +1769,7 @@ export default function App() {
                 />
             )}
 
-            {activePage === 'timeline' && <TimelineDashboard dark={dark} lang={lang} filteredData={filteredData} epicMap={epicMap} t={t} dateRangeStart={timelineDateRangeStart} dateRangeEnd={timelineDateRangeEnd} />}
+            {activePage === 'timeline' && <TimelineDashboard dark={dark} lang={lang} filteredData={filteredData} epicMap={epicMap} t={t} minDelay={timelineMinDelay} />}
             </>
             )}
 

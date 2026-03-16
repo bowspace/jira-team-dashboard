@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Users, Briefcase, Layers, Calendar, Settings2, ZoomIn, ZoomOut, CheckCircle } from 'lucide-react';
+import { Users, Briefcase, Layers, Calendar, Settings2, ZoomIn, ZoomOut, CheckCircle, Info, X } from 'lucide-react';
 
+const JIRA_BASE = 'https://jira2.my-group.net/browse';
 const DAY_MS = 86400000;
 const ROW_HEIGHT = 36;
 const HEADER_HEIGHT = 52;
@@ -57,7 +58,7 @@ const ALL_COLUMNS = [
 
 const DEFAULT_VISIBLE_COLS = ['id', 'summary', 'assignee', 'startDate', 'dueDate'];
 
-export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t, dateRangeStart, dateRangeEnd }) {
+export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t, minDelay }) {
     const [groupBy, setGroupBy] = useState('assignee');
     const [zoomLevel, setZoomLevel] = useState('month');
     const [zoomScale, setZoomScale] = useState(ZOOM_PRESETS.month.colWidth);
@@ -76,6 +77,7 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
         } catch { return {}; }
     });
     const [showColSettings, setShowColSettings] = useState(false);
+    const [showInfo, setShowInfo] = useState(false);
     const [resizing, setResizing] = useState(null);
     const scrollRef = useRef(null);
     const containerRef = useRef(null);
@@ -149,17 +151,17 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
         document.addEventListener('mouseup', onMouseUp);
     }, [colWidths]);
 
-    // Date-range-filtered data
+    // Delay-filtered data
     const rangeFilteredData = useMemo(() => {
-        if (!dateRangeStart && !dateRangeEnd) return filteredData;
+        if (minDelay === '') return filteredData;
+        const min = parseInt(minDelay, 10);
+        if (isNaN(min)) return filteredData;
+        if (min === 0) return filteredData.filter(d => d.delayDays === 0 || d.devTime === d.delayDays);
         return filteredData.filter(d => {
-            const s = d.startDate || d.endDate;
-            const e = d.endDate || d.startDate;
-            if (dateRangeStart && e < dateRangeStart) return false;
-            if (dateRangeEnd && s > dateRangeEnd) return false;
-            return true;
+            const realDelay = (d.devTime === d.delayDays) ? 0 : d.delayDays;
+            return realDelay <= min;
         });
-    }, [filteredData, dateRangeStart, dateRangeEnd]);
+    }, [filteredData, minDelay]);
 
     // Grouped & sorted data
     const { groups, rangeStart, rangeEnd, totalDays, dateColumns } = useMemo(() => {
@@ -633,7 +635,9 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                                                         }`}
                                                         style={{ width: getColWidth(col.key), minWidth: col.minWidth }}
                                                         title={String(col.getValue(task))}>
-                                                        {col.key === 'status' ? (
+                                                        {col.key === 'id' ? (
+                                                            <a href={`${JIRA_BASE}/${task.id}`} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{task.id}</a>
+                                                        ) : col.key === 'status' ? (
                                                             <><span className={`w-2 h-2 rounded-full shrink-0 ${getStatusColor(task.status).bg}`} />
                                                             <span className="truncate">{task.status}</span></>
                                                         ) : col.getValue(task)}
@@ -671,7 +675,7 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                         <div className={`fixed z-50 pointer-events-none rounded-lg shadow-lg border p-3 text-xs max-w-xs ${
                             dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-200 text-slate-700'
                         }`} style={{ left: tooltip.fixedX, top: tooltip.fixedY }}>
-                            <div className="font-bold text-sm mb-1.5">{tooltip.task.id}</div>
+                            <a href={`${JIRA_BASE}/${tooltip.task.id}`} target="_blank" rel="noopener noreferrer" className="font-bold text-sm mb-1.5 text-blue-400 hover:underline pointer-events-auto block">{tooltip.task.id}</a>
                             <div className={`mb-2 ${dark ? 'text-slate-300' : 'text-slate-600'}`}>{tooltip.task.summary}</div>
                             <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                                 <span className={dark ? 'text-slate-400' : 'text-slate-500'}>{t.assignee || 'Assignee'}:</span>
@@ -685,10 +689,14 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                                 <span>{formatDateFull(tooltip.task.startDate)}</span>
                                 <span className={dark ? 'text-slate-400' : 'text-slate-500'}>{t.dueDate || 'Target End'}:</span>
                                 <span>{formatDateFull(tooltip.task.dueDate)}</span>
-                                <span className={dark ? 'text-slate-400' : 'text-slate-500'}>{t.endDate || 'End'}:</span>
+                                <span className={dark ? 'text-slate-400' : 'text-slate-500'}>{t.lastUpdated || 'Updated'}:</span>
                                 <span>{formatDateFull(tooltip.task.endDate)}</span>
-                                <span className={dark ? 'text-slate-400' : 'text-slate-500'}>{t.devDays || 'Dev'}:</span>
-                                <span>{tooltip.task.devTime} {t.days || 'days'}</span>
+                                {['Done', 'Wait PROD'].includes(tooltip.task.status) && (
+                                    <>
+                                        <span className={dark ? 'text-slate-400' : 'text-slate-500'}>{t.devDays || 'Dev'}:</span>
+                                        <span>{tooltip.task.devTime} {t.days || 'days'}</span>
+                                    </>
+                                )}
                                 {tooltip.task.delayDays > 0 && tooltip.task.devTime !== tooltip.task.delayDays && (
                                     <>
                                         <span className="text-red-400">{t.delayDays || 'Delay'}:</span>
@@ -708,7 +716,7 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
             )}
 
             {/* Legend — below Gantt chart */}
-            <div className="flex flex-wrap gap-3 text-xs pt-2">
+            <div className="flex flex-wrap items-center gap-3 text-xs pt-2">
                 {Object.entries(STATUS_COLORS).map(([name, { hex }]) => (
                     <div key={name} className="flex items-center gap-1.5">
                         <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: hex }} />
@@ -723,10 +731,98 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                     <div className="w-2 h-2 rotate-45 bg-red-500 border border-red-600" />
                     <span className={dark ? 'text-slate-400' : 'text-slate-500'}>{t.dueDate || 'Target End'}</span>
                 </div>
+                <button
+                    onClick={() => setShowInfo(true)}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-slate-500/20 transition-colors ${dark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                    title={lang === 'th' ? 'รายละเอียดการคำนวณ' : 'Calculation details'}
+                >
+                    <Info size={14} />
+                </button>
                 <span className={`ml-auto ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
                     {rangeFilteredData.length} {t.tasks || 'tasks'}
                 </span>
             </div>
+
+            {/* Info Modal — Per-Status Behavior */}
+            {showInfo && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" onClick={() => setShowInfo(false)}>
+                    <div className={`relative max-w-lg w-full mx-4 rounded-xl shadow-2xl border p-5 ${dark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-700'}`}
+                        onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => setShowInfo(false)} className={`absolute top-3 right-3 p-1 rounded-lg hover:bg-slate-500/20 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            <X size={18} />
+                        </button>
+                        <h3 className="text-base font-bold mb-1">{lang === 'th' ? 'การคำนวณ Timeline' : lang === 'zh' ? '时间线计算逻辑' : 'Timeline Calculation'}</h3>
+                        <p className={`text-xs mb-3 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            {lang === 'th' ? 'ข้อมูลที่ใช้ในการแสดง Bar Chart และการคำนวณ Delay' : lang === 'zh' ? '条形图显示和延迟计算所用的数据字段' : 'Data fields used for bar chart display and delay calculation'}
+                        </p>
+
+                        {/* Field Mapping */}
+                        <div className={`text-xs rounded-lg border p-3 mb-3 ${dark ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
+                            <div className="font-semibold mb-1.5">{lang === 'th' ? 'แหล่งข้อมูล (Jira Fields)' : lang === 'zh' ? '数据来源 (Jira字段)' : 'Data Source (Jira Fields)'}</div>
+                            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                                <span className={dark ? 'text-slate-400' : 'text-slate-500'}>Start Date:</span>
+                                <span>Target Start → Created</span>
+                                <span className={dark ? 'text-slate-400' : 'text-slate-500'}>Target Date:</span>
+                                <span>Target End → Due Date → Updated</span>
+                                <span className={dark ? 'text-slate-400' : 'text-slate-500'}>Updated Date:</span>
+                                <span>Updated (Jira)</span>
+                            </div>
+                            <div className={`mt-2 pt-2 border-t ${dark ? 'border-slate-600' : 'border-slate-300'}`}>
+                                <span className={dark ? 'text-slate-400' : 'text-slate-500'}>Dev Days</span> = Updated − Start &nbsp;|&nbsp;
+                                <span className={dark ? 'text-slate-400' : 'text-slate-500'}>Delay</span> = max(0, Updated − Target Date)
+                            </div>
+                        </div>
+
+                        {/* Per-Status Table */}
+                        <div className="text-xs">
+                            <div className="font-semibold mb-1.5">{lang === 'th' ? 'พฤติกรรมตามสถานะ' : lang === 'zh' ? '各状态行为' : 'Per-Status Behavior'}</div>
+                            <table className="w-full">
+                                <thead>
+                                    <tr className={dark ? 'text-slate-400' : 'text-slate-500'}>
+                                        <th className="text-left py-1 pr-2 font-medium">Status</th>
+                                        <th className="text-left py-1 pr-2 font-medium">Bar</th>
+                                        <th className="text-left py-1 font-medium">{lang === 'th' ? 'แสดงผล' : lang === 'zh' ? '显示' : 'Display'}</th>
+                                    </tr>
+                                </thead>
+                                <tbody className={`${dark ? 'text-slate-300' : 'text-slate-600'}`}>
+                                    {[
+                                        { status: 'Done', color: STATUS_COLORS['Done']?.hex, desc: lang === 'th' ? 'Updated = วันที่เสร็จ, แสดง Dev Days + Delay ถ้ามี' : 'Updated ≈ completion date, shows Dev Days + Delay if any' },
+                                        { status: 'Wait PROD', color: STATUS_COLORS['Wait PROD']?.hex, desc: lang === 'th' ? 'เหมือน Done — งานเสร็จแล้ว รอ deploy' : 'Same as Done — work finished, awaiting deploy' },
+                                        { status: 'In Progress', color: STATUS_COLORS['In Progress']?.hex, desc: lang === 'th' ? 'Updated = อัพเดทล่าสุด, อาจแสดง Delay ที่ไม่ถูกต้อง' : 'Updated = last edit, may show misleading delay' },
+                                        { status: 'QA In Progress', color: STATUS_COLORS['QA In Progress']?.hex, desc: lang === 'th' ? 'เหมือน In Progress — กำลัง QA' : 'Same as In Progress — under QA' },
+                                        { status: 'To Do', color: STATUS_COLORS['To Do']?.hex, desc: lang === 'th' ? 'Bar สั้น, ปกติไม่แสดง Delay' : 'Short bar, usually no delay shown' },
+                                        { status: 'Backlog', color: STATUS_COLORS['Backlog']?.hex, desc: lang === 'th' ? 'เหมือน To Do — ยังไม่เริ่มทำ' : 'Same as To Do — not started' },
+                                    ].map(({ status, color, desc }) => (
+                                        <tr key={status} className={`border-t ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
+                                            <td className="py-1.5 pr-2 whitespace-nowrap">
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+                                                    {status}
+                                                </span>
+                                            </td>
+                                            <td className="py-1.5 pr-2 whitespace-nowrap">Start → Updated</td>
+                                            <td className="py-1.5">{desc}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Delay note */}
+                        <div className={`mt-3 text-xs flex items-start gap-2 rounded-lg border p-2.5 ${dark ? 'bg-red-900/20 border-red-800/40 text-red-300' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                            <div className="w-3 h-3 mt-0.5 shrink-0 rounded-sm" style={{ background: 'repeating-linear-gradient(135deg, #f87171, #f87171 2px, #ef4444 2px, #ef4444 4px)' }} />
+                            <div>
+                                <span className="font-medium">{lang === 'th' ? 'Delay Bar แสดงเมื่อ:' : lang === 'zh' ? '延迟条显示条件：' : 'Delay bar shown when:'}</span>{' '}
+                                {lang === 'th'
+                                    ? 'delayDays > 0 และ devTime ≠ delayDays (ป้องกัน false positive เมื่อ startDate ≈ targetDate)'
+                                    : lang === 'zh'
+                                    ? 'delayDays > 0 且 devTime ≠ delayDays（防止 startDate ≈ targetDate 时的误报）'
+                                    : 'delayDays > 0 AND devTime ≠ delayDays (prevents false positives when startDate ≈ targetDate)'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
