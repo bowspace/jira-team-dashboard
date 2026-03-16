@@ -66,7 +66,7 @@ function MultiSelect({ options, selected, onChange, label, dark, epicMap }) {
         <div ref={ref} className="relative">
             <button
                 onClick={() => setOpen(!open)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm border min-w-[130px] max-w-[200px] ${
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs border min-w-[110px] max-w-[180px] ${
                     dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                 } ${!allSelected ? 'ring-2 ring-blue-500/40' : ''}`}
             >
@@ -287,6 +287,7 @@ const translations = {
         allReporters: 'ผู้แจ้งทั้งหมด',
         allVersions: 'ทุกเวอร์ชั่น',
         allEpics: 'ทุก Epic',
+        allSprints: 'ทุก Sprint',
         allStatuses: 'ทุกสถานะ',
         clearFilters: 'ล้างตัวกรอง',
         totalTasks: 'จำนวนงานทั้งหมด',
@@ -424,6 +425,7 @@ const translations = {
         allReporters: 'All Reporters',
         allVersions: 'All Versions',
         allEpics: 'All Epics',
+        allSprints: 'All Sprints',
         allStatuses: 'All Statuses',
         clearFilters: 'Clear filters',
         totalTasks: 'Total Tasks',
@@ -556,6 +558,7 @@ const translations = {
         allReporters: '所有报告人',
         allVersions: '所有版本',
         allEpics: '所有 Epic',
+        allSprints: '所有 Sprint',
         allStatuses: '所有状态',
         clearFilters: '清除筛选',
         totalTasks: '任务总数',
@@ -857,7 +860,8 @@ export default function App() {
             reporters: [],
             projects: [],
             fixVersions: [],
-            epicLinks: []
+            epicLinks: [],
+            sprints: []
         };
     });
 
@@ -1075,7 +1079,7 @@ export default function App() {
     }, [loadData]);
 
     const filterOptions = useMemo(() => {
-        const opts = { weeks: new Set(), months: new Set(), quarters: new Set(), assignees: new Set(), reporters: new Set(), projects: new Set(), fixVersions: new Set(), epicLinks: new Set() };
+        const opts = { weeks: new Set(), months: new Set(), quarters: new Set(), assignees: new Set(), reporters: new Set(), projects: new Set(), fixVersions: new Set(), epicLinks: new Set(), sprints: new Set() };
         data.forEach(item => {
             if (item.week && item.week !== '-') opts.weeks.add(item.week);
             if (item.month && item.month !== '-') opts.months.add(item.month);
@@ -1085,6 +1089,7 @@ export default function App() {
             if (item.project && item.project !== 'Unknown') opts.projects.add(item.project);
             if (item.fixVersion && item.fixVersion !== 'N/A') opts.fixVersions.add(item.fixVersion);
             if (item.epicLink) opts.epicLinks.add(item.epicLink);
+            if (item.sprints) item.sprints.forEach(s => { if (s) opts.sprints.add(s); });
         });
         return {
             weeks: Array.from(opts.weeks).sort(),
@@ -1094,7 +1099,8 @@ export default function App() {
             reporters: Array.from(opts.reporters).sort(),
             projects: Array.from(opts.projects).sort(),
             fixVersions: Array.from(opts.fixVersions).sort(),
-            epicLinks: Array.from(opts.epicLinks).sort()
+            epicLinks: Array.from(opts.epicLinks).sort(),
+            sprints: Array.from(opts.sprints).sort()
         };
     }, [data]);
 
@@ -1111,6 +1117,7 @@ export default function App() {
             if (filters.projects.length > 0 && !filters.projects.includes(item.project)) return false;
             if (filters.fixVersions.length > 0 && !filters.fixVersions.includes(item.fixVersion)) return false;
             if (filters.epicLinks.length > 0 && !filters.epicLinks.includes(item.epicLink)) return false;
+            if (filters.sprints.length > 0 && !item.sprints.some(s => filters.sprints.includes(s))) return false;
             return true;
         });
     }, [data, filters]);
@@ -1528,8 +1535,8 @@ export default function App() {
 
     const dateOptions = filters.dateType === 'weekly' ? filterOptions.weeks : filters.dateType === 'monthly' ? filterOptions.months : filterOptions.quarters;
 
-    const resetFilters = () => { setFilters({ dateType: 'quarter', dateValues: [], statusGroups: [], assignees: [], reporters: [], projects: [], fixVersions: [], epicLinks: [] }); setTimelineMinDelay(''); };
-    const hasActiveFilters = filters.dateValues.length > 0 || filters.statusGroups.length > 0 || filters.assignees.length > 0 || filters.reporters.length > 0 || filters.projects.length > 0 || filters.fixVersions.length > 0 || filters.epicLinks.length > 0 || timelineMinDelay !== '';
+    const resetFilters = () => { setFilters({ dateType: 'quarter', dateValues: [], statusGroups: [], assignees: [], reporters: [], projects: [], fixVersions: [], epicLinks: [], sprints: [] }); setTimelineMinDelay(''); };
+    const hasActiveFilters = filters.dateValues.length > 0 || filters.statusGroups.length > 0 || filters.assignees.length > 0 || filters.reporters.length > 0 || filters.projects.length > 0 || filters.fixVersions.length > 0 || filters.epicLinks.length > 0 || filters.sprints.length > 0 || timelineMinDelay !== '';
 
     if (loading) {
         return <div className={`flex h-screen items-center justify-center ${dark ? 'bg-slate-900 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>{t.loading}</div>;
@@ -1638,7 +1645,7 @@ export default function App() {
             {/* Sticky Header + Filters */}
             <div className={`sticky top-0 z-40 -mx-4 px-4 md:-mx-6 md:px-6 pt-2 pb-4 ${dark ? 'bg-slate-900/95 backdrop-blur-sm' : 'bg-slate-50/95 backdrop-blur-sm'}`}>
             {/* Header */}
-            <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center">
+            <div className="mb-4 flex justify-between items-start">
                 <div>
                     <h1 className={`text-2xl md:text-3xl font-bold flex items-center gap-2 md:gap-3 ${dark ? 'text-white' : 'text-slate-900'}`}>
                         {activePage === 'timeline' ? <GanttChart className="text-blue-500" size={28} /> : <Activity className="text-blue-500" size={28} />}
@@ -1646,7 +1653,7 @@ export default function App() {
                     </h1>
                     <p className={`mt-1 text-sm md:text-base ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{activePage === 'timeline' ? t.timelineSubtitle : t.subtitle}</p>
                 </div>
-                <div className="mt-3 md:mt-0 flex items-center gap-2 md:gap-3">
+                <div className="flex items-center gap-2 md:gap-3">
                     {/* Refresh */}
                     <button
                         onClick={() => loadData(false)}
@@ -1682,10 +1689,10 @@ export default function App() {
             </div>
 
             {/* Desktop Filters Bar — hidden on mobile */}
-            <div className={`hidden md:flex ${panel} p-4 flex-wrap gap-3 items-center`}>
-                <div className={`flex items-center gap-2 font-medium mr-1 ${dark ? 'text-slate-400' : 'text-slate-600'}`}>
-                    <Filter size={20} />
-                    {t.filters}:
+            <div className={`hidden md:flex ${panel} p-3 flex-wrap gap-2 items-center text-xs`}>
+                <div className={`flex items-center gap-1.5 font-medium mr-1 ${dark ? 'text-slate-400' : 'text-slate-600'}`}>
+                    <Filter size={16} />
+                    <span className="text-xs">{t.filters}:</span>
                 </div>
 
                 <div className={`flex items-center gap-1 rounded-md p-0.5 ${dark ? 'bg-slate-700' : 'bg-slate-100'}`}>
@@ -1697,7 +1704,7 @@ export default function App() {
                         <button
                             key={dt.key}
                             onClick={() => setFilters(prev => ({ ...prev, dateType: dt.key, dateValues: [] }))}
-                            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                            className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                                 filters.dateType === dt.key
                                     ? 'bg-blue-600 text-white shadow-sm'
                                     : dark ? 'text-slate-400 hover:bg-slate-600' : 'text-slate-600 hover:bg-slate-200'
@@ -1715,22 +1722,23 @@ export default function App() {
                 <MultiSelect options={filterOptions.reporters} selected={filters.reporters} onChange={(v) => setFilters(prev => ({ ...prev, reporters: v }))} label={t.allReporters} dark={dark} />
                 <MultiSelect options={filterOptions.fixVersions} selected={filters.fixVersions} onChange={(v) => setFilters(prev => ({ ...prev, fixVersions: v }))} label={t.allVersions} dark={dark} />
                 <MultiSelect options={filterOptions.epicLinks} selected={filters.epicLinks} onChange={(v) => setFilters(prev => ({ ...prev, epicLinks: v }))} label={t.allEpics} dark={dark} epicMap={epicMap} />
+                <MultiSelect options={filterOptions.sprints} selected={filters.sprints} onChange={(v) => setFilters(prev => ({ ...prev, sprints: v }))} label={t.allSprints || 'All Sprints'} dark={dark} />
 
                 {activePage === 'timeline' && (
                     <>
                         <div className={`w-px h-6 ${dark ? 'bg-slate-600' : 'bg-slate-300'}`} />
-                        <div className="flex items-center gap-1.5">
-                            <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.minDelay || 'Delay ≤'}:</span>
+                        <div className="flex items-center gap-1">
+                            <span className={`text-xs ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.minDelay || 'Delay ≤'}:</span>
                             <input type="number" min="0" value={timelineMinDelay} onChange={(e) => setTimelineMinDelay(e.target.value)}
                                 placeholder=""
-                                className={`rounded-md px-2 py-1.5 text-sm border outline-none focus:ring-2 focus:ring-blue-500 w-16 ${dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'}`} />
-                            <span className={`text-sm ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.days || 'days'}</span>
+                                className={`rounded-md px-1.5 py-1 text-xs border outline-none focus:ring-2 focus:ring-blue-500 w-14 ${dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'}`} />
+                            <span className={`text-xs ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.days || 'days'}</span>
                         </div>
                     </>
                 )}
 
                 {hasActiveFilters && (
-                    <button onClick={resetFilters} className="text-sm text-blue-500 hover:text-blue-400 underline ml-auto">
+                    <button onClick={resetFilters} className="text-xs text-blue-500 hover:text-blue-400 underline ml-auto">
                         {t.clearFilters}
                     </button>
                 )}
@@ -1765,6 +1773,7 @@ export default function App() {
                         { title: t.allReporters, key: 'reporters', options: filterOptions.reporters, selected: filters.reporters, onChange: (v) => setFilters(prev => ({ ...prev, reporters: v })) },
                         { title: t.allVersions, key: 'fixVersions', options: filterOptions.fixVersions, selected: filters.fixVersions, onChange: (v) => setFilters(prev => ({ ...prev, fixVersions: v })) },
                         { title: t.allEpics, key: 'epicLinks', options: filterOptions.epicLinks, selected: filters.epicLinks, onChange: (v) => setFilters(prev => ({ ...prev, epicLinks: v })), epicMap },
+                        { title: t.allSprints || 'All Sprints', key: 'sprints', options: filterOptions.sprints, selected: filters.sprints, onChange: (v) => setFilters(prev => ({ ...prev, sprints: v })) },
                     ]}
                 />
             )}

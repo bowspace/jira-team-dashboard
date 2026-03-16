@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Users, Briefcase, Layers, Calendar, Settings2, ZoomIn, ZoomOut, CheckCircle, Info, X } from 'lucide-react';
+import { Users, Briefcase, Layers, Calendar, Settings2, ZoomIn, ZoomOut, CheckCircle, Info, X, Bug, LayoutList, Repeat } from 'lucide-react';
 
 const JIRA_BASE = 'https://jira2.my-group.net/browse';
 const DAY_MS = 86400000;
@@ -63,12 +63,15 @@ const ALL_COLUMNS = [
     { key: 'priority', label: 'Priority', minWidth: 60, defaultWidth: 80, getValue: (task) => task.priority || '-' },
     { key: 'devTime', label: 'Dev Days', minWidth: 60, defaultWidth: 70, getValue: (task) => task.devTime },
     { key: 'delayDays', label: 'Delay Days', minWidth: 60, defaultWidth: 70, getValue: (task) => task.delayDays },
+    { key: 'sprint', label: 'Sprint', minWidth: 80, defaultWidth: 120, getValue: (task) => task.sprints?.length > 0 ? task.sprints[task.sprints.length - 1] : '-' },
 ];
 
 const DEFAULT_VISIBLE_COLS = ['id', 'summary', 'assignee', 'startDate', 'dueDate'];
+const MOBILE_VISIBLE_COLS = ['id', 'summary'];
+const isMobile = () => window.innerWidth < 768;
 
 export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t, minDelay, dateType }) {
-    const [groupBy, setGroupBy] = useState('assignee');
+    const [groupBy, setGroupBy] = useState(['assignee']);
     const [zoomLevel, setZoomLevel] = useState('month');
     const [zoomScale, setZoomScale] = useState(ZOOM_PRESETS.month.colWidth);
     const [tooltip, setTooltip] = useState(null);
@@ -76,8 +79,9 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
     const [visibleCols, setVisibleCols] = useState(() => {
         try {
             const saved = localStorage.getItem('timeline-columns');
-            return saved ? JSON.parse(saved) : DEFAULT_VISIBLE_COLS;
-        } catch { return DEFAULT_VISIBLE_COLS; }
+            if (saved) return JSON.parse(saved);
+            return isMobile() ? MOBILE_VISIBLE_COLS : DEFAULT_VISIBLE_COLS;
+        } catch { return isMobile() ? MOBILE_VISIBLE_COLS : DEFAULT_VISIBLE_COLS; }
     });
     const [colWidths, setColWidths] = useState(() => {
         try {
@@ -87,6 +91,8 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
     });
     const [showColSettings, setShowColSettings] = useState(false);
     const [showInfo, setShowInfo] = useState(false);
+    const [sortCol, setSortCol] = useState({ key: null, dir: 'asc' });
+    const [showGroupByPanel, setShowGroupByPanel] = useState(false);
     const [resizing, setResizing] = useState(null);
     const scrollRef = useRef(null);
     const containerRef = useRef(null);
@@ -182,26 +188,63 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
         });
     }, [filteredData, minDelay]);
 
-    // Grouped & sorted data
+    const getGroupKey = (task, field) => {
+        if (field === 'assignee') return task.assignee || 'Unassigned';
+        if (field === 'project') return task.project || 'Unknown';
+        if (field === 'status') return getStatusGroup(task.status);
+        if (field === 'epic') return task.epicName || task.epicLink || 'No Epic';
+        if (field === 'issueType') return task.issueType || 'Unknown';
+        if (field === 'sprint') return (task.sprints && task.sprints.length > 0) ? task.sprints[task.sprints.length - 1] : 'No Sprint';
+        return 'Unknown';
+    };
+
+    // Grouped & sorted data (supports 1-2 levels of grouping)
     const { groups, rangeStart, rangeEnd, totalDays, dateColumns } = useMemo(() => {
         const tasks = rangeFilteredData.filter(d => d.startDate && d.endDate);
         if (tasks.length === 0) return { groups: [], rangeStart: new Date(), rangeEnd: new Date(), totalDays: 1, dateColumns: [] };
 
+        const primaryField = groupBy[0];
+        const secondaryField = groupBy.length > 1 ? groupBy[1] : null;
+
         const groupMap = {};
         tasks.forEach(task => {
-            let key;
-            if (groupBy === 'assignee') key = task.assignee || 'Unassigned';
-            else if (groupBy === 'project') key = task.project || 'Unknown';
-            else if (groupBy === 'status') key = getStatusGroup(task.status);
-            else key = task.epicName || task.epicLink || 'No Epic';
-            if (!groupMap[key]) groupMap[key] = [];
-            groupMap[key].push(task);
+            const key = getGroupKey(task, primaryField);
+            if (!groupMap[key]) groupMap[key] = {};
+            if (secondaryField) {
+                const subKey = getGroupKey(task, secondaryField);
+                if (!groupMap[key][subKey]) groupMap[key][subKey] = [];
+                groupMap[key][subKey].push(task);
+            } else {
+                if (!groupMap[key].__tasks) groupMap[key].__tasks = [];
+                groupMap[key].__tasks.push(task);
+            }
         });
 
-        const sortedGroups = Object.keys(groupMap).sort().map(name => ({
-            name,
-            tasks: groupMap[name].sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
-        }));
+        const getSortValue = (task) => {
+            if (!sortCol.key) return new Date(task.startDate).getTime();
+            const col = ALL_COLUMNS.find(c => c.key === sortCol.key);
+            if (!col) return 0;
+            const v = col.getValue(task);
+            if (typeof v === 'number') return v;
+            return String(v || '').toLowerCase();
+        };
+        const sortFn = (a, b) => {
+            const va = getSortValue(a);
+            const vb = getSortValue(b);
+            const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb));
+            return sortCol.dir === 'desc' ? -cmp : cmp;
+        };
+        const sortedGroups = Object.keys(groupMap).sort().map(name => {
+            if (secondaryField) {
+                const subGroups = Object.keys(groupMap[name]).sort().map(subName => ({
+                    name: subName,
+                    tasks: groupMap[name][subName].sort(sortFn)
+                }));
+                const allTasks = subGroups.flatMap(sg => sg.tasks);
+                return { name, subGroups, tasks: allTasks };
+            }
+            return { name, subGroups: null, tasks: (groupMap[name].__tasks || []).sort(sortFn) };
+        });
 
         let minDate = Infinity, maxDate = -Infinity;
         tasks.forEach(tk => {
@@ -240,7 +283,7 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
             cols.push(new Date(rStart.getTime() + i * DAY_MS));
         }
         return { groups: sortedGroups, rangeStart: rStart, rangeEnd: rEnd, totalDays: tDays, dateColumns: cols };
-    }, [rangeFilteredData, groupBy, containerWidth, totalFixedWidth, colWidth]);
+    }, [rangeFilteredData, groupBy, containerWidth, totalFixedWidth, colWidth, sortCol]);
 
     const todayStr = new Date().toISOString().split('T')[0];
     const todayPx = ((new Date(todayStr).getTime() - rangeStart.getTime()) / DAY_MS) * colWidth;
@@ -298,7 +341,25 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
         { value: 'project', label: 'Project', icon: Briefcase },
         { value: 'epic', label: 'Epic', icon: Layers },
         { value: 'status', label: t.status || 'Status', icon: CheckCircle },
+        { value: 'issueType', label: 'Issue Type', icon: LayoutList },
+        { value: 'sprint', label: 'Sprint', icon: Repeat },
     ];
+
+    const toggleGroupBy = (value) => {
+        setGroupBy(prev => {
+            if (prev.includes(value)) {
+                // Remove — but keep at least 1
+                const next = prev.filter(v => v !== value);
+                return next.length > 0 ? next : prev;
+            }
+            if (prev.length >= 2) {
+                // Replace the second one
+                return [prev[0], value];
+            }
+            return [...prev, value];
+        });
+        setCollapsedGroups({});
+    };
 
     const getColLabel = (key) => {
         const map = {
@@ -417,6 +478,31 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
 
     const activeCols = useMemo(() => visibleCols.map(key => ALL_COLUMNS.find(c => c.key === key)).filter(Boolean), [visibleCols]);
 
+    const renderTaskRow = (task) => (
+        <div key={task.id}
+            className={`flex items-center border-b text-xs ${dark ? 'border-slate-700/50' : 'border-slate-50'}`}
+            style={{ height: ROW_HEIGHT }}>
+            {activeCols.map(col => (
+                <div key={col.key}
+                    className={`px-2 truncate ${
+                        col.key === 'id' ? `font-mono ${dark ? 'text-blue-400' : 'text-blue-600'}`
+                        : col.key === 'status' ? 'flex items-center gap-1'
+                        : col.key === 'delayDays' && task.delayDays > 0 && task.devTime !== task.delayDays ? 'text-red-500 font-medium'
+                        : dark ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                    style={{ width: getColWidth(col.key), minWidth: col.minWidth }}
+                    title={String(col.getValue(task))}>
+                    {col.key === 'id' ? (
+                        <a href={`${JIRA_BASE}/${task.id}`} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{task.id}</a>
+                    ) : col.key === 'status' ? (
+                        <><span className={`w-2 h-2 rounded-full shrink-0 ${getStatusColor(task.status).bg}`} />
+                        <span className="truncate">{task.status}</span></>
+                    ) : col.getValue(task)}
+                </div>
+            ))}
+        </div>
+    );
+
     // Render a task bar with delay visualization
     const renderTaskBar = (task) => {
         const startMs = new Date(task.startDate).getTime();
@@ -530,110 +616,117 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
 
     return (
         <div className="space-y-3 mt-4">
-            {/* Controls bar */}
-            <div className="flex flex-col gap-2">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        {/* Group by */}
-                        <span className={`text-xs font-medium ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            {t.groupBy || 'Group by'}:
-                        </span>
+            {/* Controls bar — single row: Group by (left) | Zoom + Columns + Today (right) */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+                {/* Left: Group by */}
+                <div className="flex items-center gap-2 flex-wrap">
+                    {/* Group by — desktop */}
+                    <span className={`hidden md:inline text-xs font-medium ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {t.groupBy || 'Group by'}:
+                    </span>
+                    <div className="hidden md:flex items-center gap-1.5 flex-wrap">
                         {groupByOptions.map(opt => {
                             const Icon = opt.icon;
-                            const active = groupBy === opt.value;
+                            const idx = groupBy.indexOf(opt.value);
+                            const active = idx >= 0;
                             return (
-                                <button key={opt.value} onClick={() => setGroupBy(opt.value)}
+                                <button key={opt.value} onClick={() => toggleGroupBy(opt.value)}
                                     className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                         active ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                     }`}>
                                     <Icon size={13} />
                                     {opt.label}
+                                    {active && groupBy.length > 1 && (
+                                        <span className="ml-0.5 w-4 h-4 rounded-full bg-white/25 flex items-center justify-center text-[9px] font-bold">{idx + 1}</span>
+                                    )}
                                 </button>
                             );
                         })}
-
-                        <div className={`w-px h-5 mx-1 ${dark ? 'bg-slate-700' : 'bg-slate-200'}`} />
-
-                        {/* Zoom level presets */}
-                        <span className={`text-xs font-medium ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            Zoom:
-                        </span>
-                        {Object.entries(ZOOM_PRESETS).map(([key, { label }]) => (
-                            <button key={key} onClick={() => changeZoomLevel(key)}
-                                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                    zoomLevel === key ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                }`}>
-                                {label}
-                            </button>
-                        ))}
-
-                        {/* Zoom in/out fine control */}
-                        <div className="flex items-center gap-0.5">
-                            <button onClick={zoomOut} title="Zoom out"
-                                className={`p-1 rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
-                                <ZoomOut size={14} />
-                            </button>
-                            <span className={`text-[10px] min-w-[2rem] text-center tabular-nums ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
-                                {zoomScale}px
-                            </span>
-                            <button onClick={zoomIn} title="Zoom in"
-                                className={`p-1 rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
-                                <ZoomIn size={14} />
-                            </button>
-                        </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                        {/* Column settings */}
-                        <div className="relative" ref={colSettingsRef}>
-                            <button onClick={() => setShowColSettings(prev => !prev)}
-                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                    showColSettings ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                }`}>
-                                <Settings2 size={13} />
-                                {t.columns || 'Columns'}
-                            </button>
-                            {showColSettings && (
-                                <div className={`absolute right-0 top-full mt-1 z-50 rounded-lg shadow-lg border p-2 min-w-[200px] ${
-                                    dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
-                                }`}>
-                                    <p className={`text-[10px] uppercase tracking-wider font-semibold mb-1.5 px-2 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
-                                        {t.visibleColumns || 'Visible Columns'}
-                                    </p>
-                                    {ALL_COLUMNS.map(col => (
-                                        <label key={col.key} className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-xs transition-colors ${
-                                            dark ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
-                                        }`}>
-                                            <input type="checkbox" checked={visibleCols.includes(col.key)} onChange={() => toggleCol(col.key)}
-                                                className="rounded border-slate-300 text-blue-500 focus:ring-blue-500" />
-                                            {getColLabel(col.key)}
-                                        </label>
-                                    ))}
-                                    <div className={`border-t mt-1.5 pt-1.5 px-2 ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
-                                        <button onClick={() => { setVisibleCols(DEFAULT_VISIBLE_COLS); setColWidths({}); }}
-                                            className="text-[10px] text-blue-500 hover:text-blue-400">
-                                            {t.reset || 'Reset'}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Today button */}
-                        <button onClick={() => {
-                            if (scrollRef.current) {
-                                const visW = scrollRef.current.clientWidth - totalFixedWidth;
-                                scrollRef.current.scrollTo({ left: Math.max(0, todayPx - visW / 3), behavior: 'smooth' });
-                            }
-                        }} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                            dark ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50' : 'bg-red-50 text-red-600 hover:bg-red-100'
+                    {/* Group by — mobile icon */}
+                    <button onClick={() => setShowGroupByPanel(true)}
+                        className={`md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         }`}>
-                            <Calendar size={13} />
-                            {t.today || 'Today'}
-                        </button>
-                    </div>
+                        <Layers size={13} />
+                        {t.groupBy || 'Group by'}
+                    </button>
                 </div>
 
+                {/* Right: Zoom + Columns + Today */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Zoom */}
+                    <span className={`text-xs font-medium ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Zoom:</span>
+                    {Object.entries(ZOOM_PRESETS).map(([key, { label }]) => (
+                        <button key={key} onClick={() => changeZoomLevel(key)}
+                            className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                zoomLevel === key ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}>
+                            {label}
+                        </button>
+                    ))}
+                    <div className="flex items-center gap-0.5">
+                        <button onClick={zoomOut} title="Zoom out"
+                            className={`p-1 rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
+                            <ZoomOut size={14} />
+                        </button>
+                        <span className={`text-[10px] min-w-[2rem] text-center tabular-nums ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                            {zoomScale}px
+                        </span>
+                        <button onClick={zoomIn} title="Zoom in"
+                            className={`p-1 rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
+                            <ZoomIn size={14} />
+                        </button>
+                    </div>
+
+                    {/* Column settings */}
+                    <div className="relative" ref={colSettingsRef}>
+                        <button onClick={() => setShowColSettings(prev => !prev)}
+                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                showColSettings ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}>
+                            <Settings2 size={13} />
+                            {t.columns || 'Columns'}
+                        </button>
+                        {showColSettings && (
+                            <div className={`absolute right-0 top-full mt-1 z-50 rounded-lg shadow-lg border p-2 min-w-[200px] ${
+                                dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+                            }`}>
+                                <p className={`text-[10px] uppercase tracking-wider font-semibold mb-1.5 px-2 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                                    {t.visibleColumns || 'Visible Columns'}
+                                </p>
+                                {ALL_COLUMNS.map(col => (
+                                    <label key={col.key} className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-xs transition-colors ${
+                                        dark ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
+                                    }`}>
+                                        <input type="checkbox" checked={visibleCols.includes(col.key)} onChange={() => toggleCol(col.key)}
+                                            className="rounded border-slate-300 text-blue-500 focus:ring-blue-500" />
+                                        {getColLabel(col.key)}
+                                    </label>
+                                ))}
+                                <div className={`border-t mt-1.5 pt-1.5 px-2 ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
+                                    <button onClick={() => { setVisibleCols(isMobile() ? MOBILE_VISIBLE_COLS : DEFAULT_VISIBLE_COLS); setColWidths({}); }}
+                                        className="text-[10px] text-blue-500 hover:text-blue-400">
+                                        {t.reset || 'Reset'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Today button */}
+                    <button onClick={() => {
+                        if (scrollRef.current) {
+                            const visW = scrollRef.current.clientWidth - totalFixedWidth;
+                            scrollRef.current.scrollTo({ left: Math.max(0, todayPx - visW / 3), behavior: 'smooth' });
+                        }
+                    }} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        dark ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50' : 'bg-red-50 text-red-600 hover:bg-red-100'
+                    }`}>
+                        <Calendar size={13} />
+                        {t.today || 'Today'}
+                    </button>
+                </div>
             </div>
 
             {/* Gantt Chart */}
@@ -648,17 +741,26 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                     <div className="flex" style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                         <div className={`shrink-0 flex border-b border-r ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
                             style={{ width: totalFixedWidth, height: headerHeight }}>
-                            {activeCols.map((col) => (
+                            {activeCols.map((col) => {
+                                const isSorted = sortCol.key === col.key;
+                                return (
                                 <div key={col.key}
-                                    className={`relative flex items-center px-2 text-xs font-semibold uppercase tracking-wider select-none ${dark ? 'text-slate-400' : 'text-slate-500'}`}
-                                    style={{ width: getColWidth(col.key), minWidth: col.minWidth }}>
+                                    className={`relative flex items-center px-2 text-xs font-semibold uppercase tracking-wider select-none cursor-pointer hover:opacity-80 ${
+                                        isSorted ? (dark ? 'text-blue-400' : 'text-blue-600') : dark ? 'text-slate-400' : 'text-slate-500'
+                                    }`}
+                                    style={{ width: getColWidth(col.key), minWidth: col.minWidth }}
+                                    onClick={() => setSortCol(prev => prev.key === col.key ? { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: col.key, dir: 'asc' })}>
                                     <span className="truncate">{getColLabel(col.key)}</span>
+                                    {isSorted && (
+                                        <span className="ml-0.5 text-[9px]">{sortCol.dir === 'asc' ? '▲' : '▼'}</span>
+                                    )}
                                     <div className={`absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize group flex items-center justify-center hover:bg-blue-500/30 ${resizing === col.key ? 'bg-blue-500/40' : ''}`}
-                                        onMouseDown={(e) => handleResizeStart(e, col.key)}>
+                                        onMouseDown={(e) => { e.stopPropagation(); handleResizeStart(e, col.key); }}>
                                         <div className={`w-px h-4 ${dark ? 'bg-slate-600 group-hover:bg-blue-400' : 'bg-slate-300 group-hover:bg-blue-500'}`} />
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                         <div ref={headerScrollRef} className="flex-1 overflow-hidden relative"
                             style={{ height: headerHeight }}>
@@ -692,36 +794,30 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                                                 dark ? 'border-slate-700 text-slate-200 hover:bg-slate-700/50 bg-slate-750' : 'border-slate-100 text-slate-700 hover:bg-slate-50 bg-slate-50'
                                             }`} style={{ height: ROW_HEIGHT }}>
                                             <span className={`text-[9px] transition-transform ${collapsedGroups[group.name] ? '' : 'rotate-90'}`}>▶</span>
-                                            {groupBy === 'status' && (
+                                            {groupBy.includes('status') && groupBy[0] === 'status' && (
                                                 <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${(STATUS_COLORS[group.name] || STATUS_COLORS['In Progress']).bg}`} />
                                             )}
                                             <span className="truncate">{group.name}</span>
                                             <span className={`ml-auto text-[10px] ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{group.tasks.length}</span>
                                         </button>
-                                        {!collapsedGroups[group.name] && group.tasks.map(task => (
-                                            <div key={task.id}
-                                                className={`flex items-center border-b text-xs ${dark ? 'border-slate-700/50' : 'border-slate-50'}`}
-                                                style={{ height: ROW_HEIGHT }}>
-                                                {activeCols.map(col => (
-                                                    <div key={col.key}
-                                                        className={`px-2 truncate ${
-                                                            col.key === 'id' ? `font-mono ${dark ? 'text-blue-400' : 'text-blue-600'}`
-                                                            : col.key === 'status' ? 'flex items-center gap-1'
-                                                            : col.key === 'delayDays' && task.delayDays > 0 && task.devTime !== task.delayDays ? 'text-red-500 font-medium'
-                                                            : dark ? 'text-slate-400' : 'text-slate-500'
-                                                        }`}
-                                                        style={{ width: getColWidth(col.key), minWidth: col.minWidth }}
-                                                        title={String(col.getValue(task))}>
-                                                        {col.key === 'id' ? (
-                                                            <a href={`${JIRA_BASE}/${task.id}`} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{task.id}</a>
-                                                        ) : col.key === 'status' ? (
-                                                            <><span className={`w-2 h-2 rounded-full shrink-0 ${getStatusColor(task.status).bg}`} />
-                                                            <span className="truncate">{task.status}</span></>
-                                                        ) : col.getValue(task)}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ))}
+                                        {!collapsedGroups[group.name] && (
+                                            group.subGroups ? group.subGroups.map(sub => (
+                                                <div key={`${group.name}::${sub.name}`}>
+                                                    <button onClick={() => toggleGroup(`${group.name}::${sub.name}`)}
+                                                        className={`w-full text-left px-2 pl-5 flex items-center gap-1.5 text-[11px] font-medium border-b transition-colors ${
+                                                            dark ? 'border-slate-700/70 text-slate-300 hover:bg-slate-700/30 bg-slate-800/80' : 'border-slate-100 text-slate-600 hover:bg-slate-50/80 bg-slate-25'
+                                                        }`} style={{ height: ROW_HEIGHT }}>
+                                                        <span className={`text-[8px] transition-transform ${collapsedGroups[`${group.name}::${sub.name}`] ? '' : 'rotate-90'}`}>▶</span>
+                                                        {groupBy[1] === 'status' && (
+                                                            <span className={`w-2 h-2 rounded-full shrink-0 ${(STATUS_COLORS[sub.name] || STATUS_COLORS['In Progress']).bg}`} />
+                                                        )}
+                                                        <span className="truncate">{sub.name}</span>
+                                                        <span className={`ml-auto text-[10px] ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{sub.tasks.length}</span>
+                                                    </button>
+                                                    {!collapsedGroups[`${group.name}::${sub.name}`] && sub.tasks.map(task => renderTaskRow(task))}
+                                                </div>
+                                            )) : group.tasks.map(task => renderTaskRow(task))
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -731,7 +827,14 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                                 {groups.map(group => (
                                     <div key={group.name}>
                                         <div className={`border-b ${dark ? 'bg-slate-750 border-slate-700' : 'bg-slate-50 border-slate-100'}`} style={{ height: ROW_HEIGHT }} />
-                                        {!collapsedGroups[group.name] && group.tasks.map(task => renderTaskBar(task))}
+                                        {!collapsedGroups[group.name] && (
+                                            group.subGroups ? group.subGroups.map(sub => (
+                                                <div key={`${group.name}::${sub.name}`}>
+                                                    <div className={`border-b ${dark ? 'bg-slate-800/80 border-slate-700/70' : 'bg-slate-25 border-slate-100'}`} style={{ height: ROW_HEIGHT }} />
+                                                    {!collapsedGroups[`${group.name}::${sub.name}`] && sub.tasks.map(task => renderTaskBar(task))}
+                                                </div>
+                                            )) : group.tasks.map(task => renderTaskBar(task))
+                                        )}
                                     </div>
                                 ))}
 
@@ -815,6 +918,43 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
                     {rangeFilteredData.length} {t.tasks || 'tasks'}
                 </span>
             </div>
+
+            {/* Mobile Group By Bottom Panel */}
+            {showGroupByPanel && (
+                <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 md:hidden" onClick={() => setShowGroupByPanel(false)}>
+                    <div className={`w-full rounded-t-2xl shadow-2xl border-t p-4 pb-8 ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+                        onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className={`text-sm font-bold ${dark ? 'text-slate-200' : 'text-slate-700'}`}>{t.groupBy || 'Group by'}</h3>
+                            <button onClick={() => setShowGroupByPanel(false)} className={`p-1 rounded-lg ${dark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-100'}`}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <p className={`text-[11px] mb-3 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                            {lang === 'th' ? 'เลือกได้สูงสุด 2 กลุ่ม' : 'Select up to 2 groups'}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {groupByOptions.map(opt => {
+                                const Icon = opt.icon;
+                                const idx = groupBy.indexOf(opt.value);
+                                const active = idx >= 0;
+                                return (
+                                    <button key={opt.value} onClick={() => toggleGroupBy(opt.value)}
+                                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                            active ? 'bg-blue-500 text-white' : dark ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'
+                                        }`}>
+                                        <Icon size={15} />
+                                        {opt.label}
+                                        {active && groupBy.length > 1 && (
+                                            <span className="ml-0.5 w-5 h-5 rounded-full bg-white/25 flex items-center justify-center text-[10px] font-bold">{idx + 1}</span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Info Modal — Per-Status Behavior */}
             {showInfo && (
