@@ -83,6 +83,7 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
     const containerRef = useRef(null);
     const headerScrollRef = useRef(null);
     const colSettingsRef = useRef(null);
+    const [containerWidth, setContainerWidth] = useState(1200);
 
     const colWidth = zoomScale;
 
@@ -94,6 +95,15 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
 
     const zoomIn = () => setZoomScale(prev => Math.min(prev + (zoomLevel === 'day' ? 5 : zoomLevel === 'month' ? 2 : 1), ZOOM_PRESETS[zoomLevel].max));
     const zoomOut = () => setZoomScale(prev => Math.max(prev - (zoomLevel === 'day' ? 5 : zoomLevel === 'month' ? 2 : 1), ZOOM_PRESETS[zoomLevel].min));
+
+    // Track container width for ensuring timeline fills visible area
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(entries => { for (const e of entries) setContainerWidth(e.contentRect.width); });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
 
     // Persist column choices
     useEffect(() => { localStorage.setItem('timeline-columns', JSON.stringify(visibleCols)); }, [visibleCols]);
@@ -203,15 +213,25 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
 
         const padding = 3 * DAY_MS;
         const rStart = new Date(minDate - padding);
-        const rEnd = new Date(maxDate + padding);
-        const tDays = Math.ceil((rEnd - rStart) / DAY_MS);
+        let rEnd = new Date(maxDate + padding);
 
+        // Extend range so the timeline fills the visible container width
+        const visibleTimelineWidth = containerWidth - totalFixedWidth;
+        if (visibleTimelineWidth > 0 && colWidth > 0) {
+            const minDays = Math.ceil(visibleTimelineWidth / colWidth);
+            const currentDays = Math.ceil((rEnd - rStart) / DAY_MS);
+            if (currentDays < minDays) {
+                rEnd = new Date(rStart.getTime() + minDays * DAY_MS);
+            }
+        }
+
+        const tDays = Math.ceil((rEnd - rStart) / DAY_MS);
         const cols = [];
         for (let i = 0; i < tDays; i++) {
             cols.push(new Date(rStart.getTime() + i * DAY_MS));
         }
         return { groups: sortedGroups, rangeStart: rStart, rangeEnd: rEnd, totalDays: tDays, dateColumns: cols };
-    }, [rangeFilteredData, groupBy]);
+    }, [rangeFilteredData, groupBy, containerWidth, totalFixedWidth, colWidth]);
 
     const todayStr = new Date().toISOString().split('T')[0];
     const todayPx = ((new Date(todayStr).getTime() - rangeStart.getTime()) / DAY_MS) * colWidth;
