@@ -1,3 +1,59 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Completely hidden scrollbar (for left panel sync scroll) */
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.hide-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+/* Thin auto-fade scrollbar — visible only while scrolling */
+.thin-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.3s;
+}
+.thin-scrollbar:hover,
+.thin-scrollbar.is-scrolling {
+    scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+/* WebKit (Chrome/Safari/Edge) */
+.thin-scrollbar::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 999px;
+    transition: background 0.3s;
+}
+.thin-scrollbar:hover::-webkit-scrollbar-thumb,
+.thin-scrollbar.is-scrolling::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.45);
+}
+.thin-scrollbar:hover::-webkit-scrollbar-thumb:hover,
+.thin-scrollbar.is-scrolling::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.7);
+}
+
+/* Dark mode variant */
+:where(.dark, .dark *) .thin-scrollbar:hover,
+:where(.dark, .dark *) .thin-scrollbar.is-scrolling {
+    scrollbar-color: rgba(100, 116, 139, 0.5) transparent;
+}
+:where(.dark, .dark *) .thin-scrollbar:hover::-webkit-scrollbar-thumb,
+:where(.dark, .dark *) .thin-scrollbar.is-scrolling::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.5);
+}
+:where(.dark, .dark *) .thin-scrollbar:hover::-webkit-scrollbar-thumb:hover,
+:where(.dark, .dark *) .thin-scrollbar.is-scrolling::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.75);
+}
