@@ -3,8 +3,9 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, ComposedChart, Line, ReferenceLine, ScatterChart, Scatter, LineChart
 } from 'recharts';
-import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, ChevronUp, ArrowUpDown, X, Target, Bug, TrendingUp, Shield, Zap, Info, PanelLeftClose, PanelLeftOpen, Headphones } from 'lucide-react';
+import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, ChevronUp, ArrowUpDown, X, Target, Bug, TrendingUp, Shield, Zap, Info, PanelLeftClose, PanelLeftOpen, Headphones, GanttChart } from 'lucide-react';
 import SupportDashboard from './SupportDashboard';
+import TimelineDashboard from './TimelineDashboard';
 
 // --- Helper: check if status is excluded from performance metrics ---
 const isExcludedFromPerformance = (status) => {
@@ -388,6 +389,15 @@ const translations = {
         period: 'ช่วงเวลา',
         jiraPerformance: 'Jira Performance',
         itSupport: 'IT Support',
+        taskTimeline: 'Timeline งาน',
+        timelineSubtitle: 'แสดง Gantt Chart ของงานปัจจุบัน',
+        groupBy: 'จัดกลุ่มตาม',
+        today: 'วันนี้',
+        delayed: 'ล่าช้า',
+        noData: 'ไม่มีข้อมูลที่จะแสดง',
+        columns: 'คอลัมน์',
+        visibleColumns: 'คอลัมน์ที่แสดง',
+        dateRange: 'ช่วงวันที่',
         lightMode: 'Light',
         darkMode: 'Dark',
         refreshData: 'รีเฟรชข้อมูล',
@@ -509,6 +519,15 @@ const translations = {
         period: 'Period',
         jiraPerformance: 'Jira Performance',
         itSupport: 'IT Support',
+        taskTimeline: 'Task Timeline',
+        timelineSubtitle: 'Gantt chart view of current tasks',
+        groupBy: 'Group by',
+        today: 'Today',
+        delayed: 'Delayed',
+        noData: 'No tasks to display',
+        columns: 'Columns',
+        visibleColumns: 'Visible Columns',
+        dateRange: 'Date range',
         lightMode: 'Light',
         darkMode: 'Dark',
         refreshData: 'Refresh data',
@@ -630,6 +649,15 @@ const translations = {
         period: '时间段',
         jiraPerformance: 'Jira 绩效',
         itSupport: 'IT 支持',
+        taskTimeline: '任务时间线',
+        timelineSubtitle: '当前任务甘特图',
+        groupBy: '分组',
+        today: '今天',
+        delayed: '延迟',
+        noData: '没有可显示的任务',
+        columns: '列',
+        visibleColumns: '可见列',
+        dateRange: '日期范围',
         lightMode: '浅色',
         darkMode: '深色',
         refreshData: '刷新数据',
@@ -773,11 +801,22 @@ export default function App() {
     const [dark, setDark] = useState(() => localStorage.getItem('dashboard-dark') === 'true');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('dashboard-sidebar') === 'collapsed');
     const [showFilterModal, setShowFilterModal] = useState(false);
-    const getPageFromPath = () => window.location.pathname === '/support' ? 'support' : 'jira';
+    const getPageFromPath = () => {
+        const p = window.location.pathname;
+        if (p === '/support') return 'support';
+        if (p === '/timeline') return 'timeline';
+        return 'jira';
+    };
     const [activePage, setActivePageState] = useState(getPageFromPath);
+    const [timelineDateRangeStart, setTimelineDateRangeStart] = useState('');
+    const [timelineDateRangeEnd, setTimelineDateRangeEnd] = useState('');
+    const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     const setActivePage = (page) => {
-        const path = page === 'support' ? '/support' : '/';
-        window.history.pushState({}, '', path);
+        const pathMap = { jira: '/', support: '/support', timeline: '/timeline' };
+        window.history.pushState({}, '', pathMap[page] || '/');
+        if (page === 'timeline') {
+            setFilters(prev => ({ ...prev, dateType: 'monthly', dateValues: prev.dateValues.length === 0 ? [currentMonth] : prev.dateValues }));
+        }
         setActivePageState(page);
     };
     useEffect(() => {
@@ -803,15 +842,18 @@ export default function App() {
     const [lastUpdated, setLastUpdated] = useState(null);
     const REFRESH_INTERVAL = 60_000; // 60 seconds
 
-    const [filters, setFilters] = useState({
-        dateType: 'quarter',
-        dateValues: [],   // empty = all
-        statusGroups: [],
-        assignees: [],
-        reporters: [],
-        projects: [],
-        fixVersions: [],
-        epicLinks: []
+    const [filters, setFilters] = useState(() => {
+        const isTimeline = window.location.pathname === '/timeline';
+        return {
+            dateType: isTimeline ? 'monthly' : 'quarter',
+            dateValues: isTimeline ? [currentMonth] : [],
+            statusGroups: [],
+            assignees: [],
+            reporters: [],
+            projects: [],
+            fixVersions: [],
+            epicLinks: []
+        };
     });
 
     const [tableSort, setTableSort] = useState({ key: null, dir: 'desc' });
@@ -1497,6 +1539,7 @@ export default function App() {
 
     const SIDEBAR_ITEMS = [
         { key: 'jira', label: t.jiraPerformance, icon: Activity, path: '/' },
+        { key: 'timeline', label: t.taskTimeline, icon: GanttChart, path: '/timeline' },
         { key: 'support', label: t.itSupport, icon: Headphones, path: '/support' },
     ];
 
@@ -1585,8 +1628,7 @@ export default function App() {
             <main className="flex-1 min-w-0 pb-20 md:pb-0">
             <div className="p-4 md:p-6">
             {activePage === 'support' && <SupportDashboard dark={dark} lang={lang} />}
-
-            {activePage === 'jira' && (
+            {(activePage === 'jira' || activePage === 'timeline') && (
             <>
             {/* Sticky Header + Filters */}
             <div className={`sticky top-0 z-40 -mx-4 px-4 md:-mx-6 md:px-6 pt-2 pb-4 ${dark ? 'bg-slate-900/95 backdrop-blur-sm' : 'bg-slate-50/95 backdrop-blur-sm'}`}>
@@ -1594,10 +1636,10 @@ export default function App() {
             <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center">
                 <div>
                     <h1 className={`text-2xl md:text-3xl font-bold flex items-center gap-2 md:gap-3 ${dark ? 'text-white' : 'text-slate-900'}`}>
-                        <Activity className="text-blue-500" size={28} />
-                        {t.title}
+                        {activePage === 'timeline' ? <GanttChart className="text-blue-500" size={28} /> : <Activity className="text-blue-500" size={28} />}
+                        {activePage === 'timeline' ? t.taskTimeline : t.title}
                     </h1>
-                    <p className={`mt-1 text-sm md:text-base ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.subtitle}</p>
+                    <p className={`mt-1 text-sm md:text-base ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{activePage === 'timeline' ? t.timelineSubtitle : t.subtitle}</p>
                 </div>
                 <div className="mt-3 md:mt-0 flex items-center gap-2 md:gap-3">
                     {/* Refresh */}
@@ -1669,6 +1711,27 @@ export default function App() {
                 <MultiSelect options={filterOptions.fixVersions} selected={filters.fixVersions} onChange={(v) => setFilters(prev => ({ ...prev, fixVersions: v }))} label={t.allVersions} dark={dark} />
                 <MultiSelect options={filterOptions.epicLinks} selected={filters.epicLinks} onChange={(v) => setFilters(prev => ({ ...prev, epicLinks: v }))} label={t.allEpics} dark={dark} epicMap={epicMap} />
 
+                {activePage === 'timeline' && (
+                    <>
+                        <div className={`w-px h-6 ${dark ? 'bg-slate-600' : 'bg-slate-300'}`} />
+                        <div className="flex items-center gap-1.5">
+                            <Calendar size={14} className={dark ? 'text-slate-400' : 'text-slate-500'} />
+                            <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{t.dateRange || 'Date range'}:</span>
+                            <input type="date" value={timelineDateRangeStart} onChange={(e) => setTimelineDateRangeStart(e.target.value)}
+                                className={`rounded-md px-2 py-1.5 text-sm border outline-none focus:ring-2 focus:ring-blue-500 ${dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'}`} />
+                            <span className={`text-sm ${dark ? 'text-slate-500' : 'text-slate-400'}`}>—</span>
+                            <input type="date" value={timelineDateRangeEnd} onChange={(e) => setTimelineDateRangeEnd(e.target.value)}
+                                className={`rounded-md px-2 py-1.5 text-sm border outline-none focus:ring-2 focus:ring-blue-500 ${dark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'}`} />
+                            {(timelineDateRangeStart || timelineDateRangeEnd) && (
+                                <button onClick={() => { setTimelineDateRangeStart(''); setTimelineDateRangeEnd(''); }}
+                                    className="text-xs text-blue-500 hover:text-blue-400 underline">
+                                    {t.clearFilters}
+                                </button>
+                            )}
+                        </div>
+                    </>
+                )}
+
                 {hasActiveFilters && (
                     <button onClick={resetFilters} className="text-sm text-blue-500 hover:text-blue-400 underline ml-auto">
                         {t.clearFilters}
@@ -1708,6 +1771,13 @@ export default function App() {
                     ]}
                 />
             )}
+
+            {activePage === 'timeline' && <TimelineDashboard dark={dark} lang={lang} filteredData={filteredData} epicMap={epicMap} t={t} dateRangeStart={timelineDateRangeStart} dateRangeEnd={timelineDateRangeEnd} />}
+            </>
+            )}
+
+            {activePage === 'jira' && (
+            <>
 
             {/* KPIs Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
