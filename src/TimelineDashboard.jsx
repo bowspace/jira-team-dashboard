@@ -3,6 +3,7 @@ import { Users, Briefcase, Layers, Calendar, Settings2, ZoomIn, ZoomOut, CheckCi
 
 const JIRA_BASE = 'https://jira2.my-group.net/browse';
 const DAY_MS = 86400000;
+const toLocalISODate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const ROW_HEIGHT = 36;
 const HEADER_HEIGHT = 52;
 const HEADER_HEIGHT_WITH_WEEKS = 68;
@@ -285,7 +286,7 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
         return { groups: sortedGroups, rangeStart: rStart, rangeEnd: rEnd, totalDays: tDays, dateColumns: cols };
     }, [rangeFilteredData, groupBy, containerWidth, totalFixedWidth, colWidth, sortCol]);
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = toLocalISODate(new Date());
     const todayPx = ((new Date(todayStr).getTime() - rangeStart.getTime()) / DAY_MS) * colWidth;
     const totalWidth = totalDays * colWidth;
     const showWeekRow = zoomLevel === 'day' && dateType === 'weekly';
@@ -390,7 +391,7 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
 
             const dayRow = dateColumns.map((d, i) => {
                 const isFirstOfMonth = d.getDate() === 1;
-                const isToday = d.toISOString().split('T')[0] === todayStr;
+                const isToday = toLocalISODate(d) === todayStr;
                 const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                 const isMonday = d.getDay() === 1;
                 return (
