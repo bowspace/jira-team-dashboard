@@ -685,28 +685,36 @@ const LANG_OPTIONS = [
 const DATE_LOCALES = { th: 'th-TH', en: 'en-US', zh: 'zh-CN' };
 
 // --- Date helpers ---
-const formatDate = (dateString, lang = 'th') => {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
+const parseLocalDate = (dateString) => {
+    if (!dateString) return null;
+    const parts = dateString.split('-');
+    if (parts.length === 3) return new Date(+parts[0], +parts[1] - 1, +parts[2]);
+    return new Date(dateString);
+};
+
+const formatDate = (dateOrString, lang = 'th') => {
+    if (!dateOrString) return '-';
+    const date = dateOrString instanceof Date ? dateOrString : parseLocalDate(dateOrString);
+    if (!date || isNaN(date.getTime())) return '-';
     return date.toLocaleDateString(DATE_LOCALES[lang] || 'th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 const getMonthYear = (dateString) => {
     if (!dateString) return '-';
-    const date = new Date(dateString);
+    const date = parseLocalDate(dateString);
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 };
 
 const getQuarter = (dateString) => {
     if (!dateString) return '-';
-    const date = new Date(dateString);
+    const date = parseLocalDate(dateString);
     const q = Math.floor(date.getMonth() / 3) + 1;
     return `Q${q}-${date.getFullYear()}`;
 };
 
 const getWeek = (dateString) => {
     if (!dateString) return '-';
-    const date = new Date(dateString);
+    const date = parseLocalDate(dateString);
     const startOfYear = new Date(date.getFullYear(), 0, 1);
     const days = Math.floor((date - startOfYear) / (1000 * 60 * 60 * 24));
     const weekNum = Math.ceil((days + startOfYear.getDay() + 1) / 7);
@@ -746,6 +754,13 @@ const parseCSV = (str) => {
         arr[row][col] += cc;
     }
     return arr;
+};
+
+const toLocalISODate = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 };
 
 const parseDateStr = (dateStr) => {
@@ -937,7 +952,7 @@ export default function App() {
             const actualDevTime = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
             const delayDays = Math.max(0, Math.ceil((endDate - dueDateObj) / (1000 * 60 * 60 * 24)));
             const epicLinkVal = row[idx.epicLink] || '';
-            const endDateISO = endDate.toISOString();
+            const endDateISO = toLocalISODate(endDate);
             // Parse sprint columns
             const sprints = sprintIndices.map(si => row[si]?.trim()).filter(Boolean);
             const sprintCount = sprints.length;
@@ -959,9 +974,9 @@ export default function App() {
                 epicLink: epicLinkVal,
                 epicName: epics[epicLinkVal]?.summary || '',
                 sheetName,
-                startDate: startDate.toISOString().split('T')[0],
-                dueDate: dueDateObj.toISOString().split('T')[0],
-                endDate: endDate.toISOString().split('T')[0],
+                startDate: toLocalISODate(startDate),
+                dueDate: toLocalISODate(dueDateObj),
+                endDate: toLocalISODate(endDate),
                 devTime: actualDevTime > 0 ? actualDevTime : 1,
                 delayDays,
                 month: getMonthYear(endDateISO),
@@ -1881,7 +1896,7 @@ export default function App() {
                                         <td className={`${tdClass} text-center`}><span className={epic.onTimeRate >= 70 ? 'text-emerald-500' : 'text-rose-500'}>{epic.onTimeRate}%</span></td>
                                         <td className={`${tdClass} text-center`}>{epic.avgDevTime}</td>
                                         <td className={`${tdClass} text-center`}>{epic.avgDelay > 0 ? <span className="text-rose-500 font-bold">{epic.avgDelay}</span> : <span className="text-emerald-500">0</span>}</td>
-                                        <td className={`${tdClass} text-sm`}>{epic.epicTargetEnd ? formatDate(parseDateStr(epic.epicTargetEnd)?.toISOString()?.split('T')[0], lang) : '-'}</td>
+                                        <td className={`${tdClass} text-sm`}>{epic.epicTargetEnd ? formatDate(parseDateStr(epic.epicTargetEnd), lang) : '-'}</td>
                                     </tr>
                                 ))}
                             </tbody>
