@@ -581,7 +581,7 @@ export default function SupportDashboard({ dark, lang }) {
     // --- KPI calculations ---
     const kpis = useMemo(() => {
         const total = filtered.length;
-        const resolved = filtered.filter(d => d.status === 'Approved').length;
+        const resolved = filtered.filter(d => d.status === 'Approved' || d.status === 'Completed').length;
         const resolvedRate = total > 0 ? (resolved / total * 100) : 0;
         const withDuration = filtered.filter(d => d.durationHours != null);
         const avgResolution = withDuration.length > 0
