@@ -560,7 +560,7 @@ export default function SupportDashboard({ dark, lang }) {
         quarters: [...new Set(data.map(d => d.quarter))].filter(Boolean).sort(),
         platforms: [...new Set(data.map(d => d.platform))].filter(Boolean).sort(),
         types: [...new Set(data.map(d => d.type))].filter(Boolean).sort(),
-        priorities: [...new Set(data.map(d => d.priority))].filter(Boolean).sort(),
+        priorities: [...new Set(data.map(d => d.priority || 'No Priority'))].sort(),
         assignees: [...new Set(data.map(d => d.assignee || 'Unassigned'))].sort(),
         statuses: [...new Set(data.map(d => d.status))].filter(Boolean).sort(),
     }), [data]);
@@ -571,7 +571,7 @@ export default function SupportDashboard({ dark, lang }) {
             if (filters.quarters.length && !filters.quarters.includes(d.quarter)) return false;
             if (filters.platforms.length && !filters.platforms.includes(d.platform)) return false;
             if (filters.types.length && !filters.types.includes(d.type)) return false;
-            if (filters.priorities.length && !filters.priorities.includes(d.priority)) return false;
+            if (filters.priorities.length && !filters.priorities.includes(d.priority || 'No Priority')) return false;
             if (filters.assignees.length && !filters.assignees.includes(d.assignee || 'Unassigned')) return false;
             if (filters.statuses.length && !filters.statuses.includes(d.status)) return false;
             return true;
