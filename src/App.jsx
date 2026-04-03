@@ -1040,10 +1040,13 @@ export default function App() {
                 }
             }
 
-            // Deduplicate by Issue key (keep the entry from the latest sheet)
+            // Deduplicate by Issue key (keep the entry with the latest Updated date)
             const seen = new Map();
             for (const task of allTasks) {
-                seen.set(task.id, task);
+                const existing = seen.get(task.id);
+                if (!existing || task.endDate > existing.endDate) {
+                    seen.set(task.id, task);
+                }
             }
 
             // Build parent-child relationships and assign weights
