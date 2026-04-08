@@ -151,7 +151,6 @@ const translations = {
         rootCauseSla: 'สาเหตุ × SLA ตาม Priority',
         withinSla: 'ภายใน SLA',
         overSla: 'เกิน SLA',
-        percentage: 'เปอร์เซ็นต์',
     },
     en: {
         title: 'Platform Support Dashboard',
@@ -208,7 +207,6 @@ const translations = {
         rootCauseSla: 'Root Cause × SLA by Priority',
         withinSla: 'Within SLA',
         overSla: 'Over SLA',
-        percentage: 'Percentage',
     },
     zh: {
         title: 'Platform Support Dashboard',
@@ -265,7 +263,6 @@ const translations = {
         rootCauseSla: '根本原因 × SLA按优先级',
         withinSla: 'SLA内',
         overSla: '超出SLA',
-        percentage: '百分比',
     },
 };
 
@@ -449,7 +446,6 @@ const UNASSIGNED = 'Unassigned';
 
 // --- Status badge colors ---
 const statusColors = {
-    'Approved': { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-400' },
     'Completed': { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-400' },
     'Running': { bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-400' },
     'Terminated': { bg: 'bg-slate-100 dark:bg-slate-700/40', text: 'text-slate-600 dark:text-slate-400' },
@@ -973,7 +969,7 @@ export default function SupportDashboard({ dark, lang }) {
                                 <XAxis type="number" tick={{ fill: ct.tick }} />
                                 <YAxis dataKey="name" type="category" width={150} tick={{ fill: ct.tick, fontSize: 12 }} />
                                 <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]} />
-                                <Bar dataKey="value" name={t.count} fill="#3b82f6" radius={[0, 4, 4, 0]} label={{ position: 'right', fill: ct.tick || '#64748b', fontSize: 11, formatter: (v) => { const d = typeChartData.find(x => x.value === v); return d ? `${v} (${d.pct}%)` : v; } }} />
+                                <Bar dataKey="value" name={t.count} fill="#3b82f6" radius={[0, 4, 4, 0]} label={({ x, y, width, height, value, index }) => <text x={x + width + 4} y={y + height / 2} dy={4} fill={ct.tick || '#64748b'} fontSize={11}>{value} ({typeChartData[index]?.pct}%)</text>} />
                             </BarChart>
                         </ResponsiveContainer>
                     ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
@@ -1005,7 +1001,7 @@ export default function SupportDashboard({ dark, lang }) {
                                 <XAxis dataKey="name" tick={{ fill: ct.tick }} />
                                 <YAxis tick={{ fill: ct.tick }} />
                                 <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]} />
-                                <Bar dataKey="count" name={t.count} radius={[4, 4, 0, 0]} label={{ position: 'top', fill: ct.tick || '#64748b', fontSize: 11, formatter: (v) => { const d = resolutionDistData.find(x => x.count === v); return d && v > 0 ? `${v} (${d.pct}%)` : ''; } }}>
+                                <Bar dataKey="count" name={t.count} radius={[4, 4, 0, 0]} label={({ x, y, width, value, index }) => value > 0 ? <text x={x + width / 2} y={y - 6} textAnchor="middle" fill={ct.tick || '#64748b'} fontSize={11}>{value} ({resolutionDistData[index]?.pct}%)</text> : null}>
                                     {resolutionDistData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                                 </Bar>
                             </BarChart>
@@ -1046,8 +1042,8 @@ export default function SupportDashboard({ dark, lang }) {
                                 <YAxis tick={{ fill: ct.tick }} />
                                 <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { if (name === t.requestorPriority) return [`${value} (${props.payload.requestorPct}%)`, name]; return [`${value} (${props.payload.itPct}%)`, name]; }} />
                                 <Legend />
-                                <Bar dataKey="requestor" name={t.requestorPriority} fill="#3b82f6" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: '#3b82f6', fontSize: 11, formatter: (v) => { const d = priorityComparisonData.find(x => x.requestor === v); return d && v > 0 ? `${v} (${d.requestorPct}%)` : ''; } }} />
-                                <Bar dataKey="it" name={t.itPriority} fill="#f59e0b" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: '#f59e0b', fontSize: 11, formatter: (v) => { const d = priorityComparisonData.find(x => x.it === v); return d && v > 0 ? `${v} (${d.itPct}%)` : ''; } }} />
+                                <Bar dataKey="requestor" name={t.requestorPriority} fill="#3b82f6" radius={[4, 4, 0, 0]} label={({ x, y, width, value, index }) => value > 0 ? <text x={x + width / 2} y={y - 6} textAnchor="middle" fill="#3b82f6" fontSize={11}>{value} ({priorityComparisonData[index]?.requestorPct}%)</text> : null} />
+                                <Bar dataKey="it" name={t.itPriority} fill="#f59e0b" radius={[4, 4, 0, 0]} label={({ x, y, width, value, index }) => value > 0 ? <text x={x + width / 2} y={y - 6} textAnchor="middle" fill="#f59e0b" fontSize={11}>{value} ({priorityComparisonData[index]?.itPct}%)</text> : null} />
                             </BarChart>
                         </ResponsiveContainer>
                     ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
@@ -1068,7 +1064,7 @@ export default function SupportDashboard({ dark, lang }) {
                                     itemStyle={{ color: ct.tooltipItem }}
                                     formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]}
                                 />
-                                <Bar dataKey="value" name={t.count} fill="#8b5cf6" radius={[0, 4, 4, 0]} label={{ position: 'right', fill: ct.tick || '#64748b', fontSize: 11, formatter: (v) => { const d = causeChartData.find(x => x.value === v); return d ? `${v} (${d.pct}%)` : v; } }}>
+                                <Bar dataKey="value" name={t.count} fill="#8b5cf6" radius={[0, 4, 4, 0]} label={({ x, y, width, height, value, index }) => <text x={x + width + 4} y={y + height / 2} dy={4} fill={ct.tick || '#64748b'} fontSize={11}>{value} ({causeChartData[index]?.pct}%)</text>}>
                                     {causeChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                                 </Bar>
                             </BarChart>
@@ -1123,7 +1119,7 @@ export default function SupportDashboard({ dark, lang }) {
                             <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
                             <XAxis type="number" tick={{ fill: ct.tick }} />
                             <YAxis dataKey="name" type="category" width={120} tick={{ fill: ct.tick, fontSize: 12 }} />
-                            <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { const total = SLA_TIERS.reduce((s, t) => s + (props.payload[t.key] || 0), 0); const pct = total > 0 ? Math.round(value / total * 1000) / 10 : 0; return [`${value} (${pct}%)`, name]; }} />
+                            <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { const total = SLA_TIERS.reduce((s, tier) => s + (props.payload[tier.key] || 0), 0); const pct = total > 0 ? Math.round(value / total * 1000) / 10 : 0; return [`${value} (${pct}%)`, name]; }} />
                             <Legend />
                             {SLA_TIERS.map(tier => (
                                 <Bar key={tier.key} dataKey={tier.key} name={tier.label} stackId="sla" fill={tier.color} />
