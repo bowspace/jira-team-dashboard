@@ -118,13 +118,18 @@ const translations = {
         allPlatforms: 'ทุกแพลตฟอร์ม',
         allTypes: 'ทุกประเภท',
         allPriorities: 'ทุกความเร่งด่วน',
+        allEvalPriorities: 'IT Priority ทั้งหมด',
         allAssignees: 'ผู้รับผิดชอบทั้งหมด',
         allStatuses: 'ทุกสถานะ',
+        allCauses: 'ทุกสาเหตุ',
         requestNo: 'Request No.',
         type: 'ประเภท',
         platform: 'แพลตฟอร์ม',
         titleCol: 'หัวข้อ',
         assignee: 'ผู้รับผิดชอบ',
+        evaluatedPriority: 'IT Priority',
+        estimatedFixTime: 'เวลาแก้ไข (Est.)',
+        cause: 'สาเหตุ',
         status: 'สถานะ',
         duration: 'ระยะเวลา',
         created: 'สร้างเมื่อ',
@@ -135,10 +140,18 @@ const translations = {
         clear: 'ล้าง',
         reset: 'รีเซ็ต',
         applyFilters: 'ใช้ตัวกรอง',
-        approvedPerTotal: 'อนุมัติ / ทั้งหมด',
+        approvedPerTotal: 'สำเร็จ / ทั้งหมด',
         refreshData: 'รีเฟรชข้อมูล',
         showingFirst: 'แสดง',
         of: 'จาก',
+        priorityComparison: 'เปรียบเทียบ Priority (Requestor vs IT)',
+        requestorPriority: 'Requestor Priority',
+        itPriority: 'IT Priority',
+        rootCauseBreakdown: 'สัดส่วนสาเหตุของปัญหา',
+        rootCauseSla: 'สาเหตุ × SLA ตาม Priority',
+        withinSla: 'ภายใน SLA',
+        overSla: 'เกิน SLA',
+        percentage: 'เปอร์เซ็นต์',
     },
     en: {
         title: 'Platform Support Dashboard',
@@ -162,13 +175,18 @@ const translations = {
         allPlatforms: 'All Platforms',
         allTypes: 'All Types',
         allPriorities: 'All Priorities',
+        allEvalPriorities: 'All IT Priorities',
         allAssignees: 'All Assignees',
         allStatuses: 'All Statuses',
+        allCauses: 'All Causes',
         requestNo: 'Request No.',
         type: 'Type',
         platform: 'Platform',
         titleCol: 'Title',
         assignee: 'Assignee',
+        evaluatedPriority: 'IT Priority',
+        estimatedFixTime: 'Est. Fix Time',
+        cause: 'Cause',
         status: 'Status',
         duration: 'Duration',
         created: 'Created',
@@ -179,10 +197,18 @@ const translations = {
         clear: 'Clear',
         reset: 'Reset',
         applyFilters: 'Apply Filters',
-        approvedPerTotal: 'Approved / Total',
+        approvedPerTotal: 'Completed / Total',
         refreshData: 'Refresh data',
         showingFirst: 'Showing',
         of: 'of',
+        priorityComparison: 'Priority Comparison (Requestor vs IT)',
+        requestorPriority: 'Requestor Priority',
+        itPriority: 'IT Priority',
+        rootCauseBreakdown: 'Root Cause Breakdown',
+        rootCauseSla: 'Root Cause × SLA by Priority',
+        withinSla: 'Within SLA',
+        overSla: 'Over SLA',
+        percentage: 'Percentage',
     },
     zh: {
         title: 'Platform Support Dashboard',
@@ -206,13 +232,18 @@ const translations = {
         allPlatforms: '所有平台',
         allTypes: '所有类型',
         allPriorities: '所有优先级',
+        allEvalPriorities: '所有IT优先级',
         allAssignees: '所有负责人',
         allStatuses: '所有状态',
+        allCauses: '所有原因',
         requestNo: '请求编号',
         type: '类型',
         platform: '平台',
         titleCol: '标题',
         assignee: '负责人',
+        evaluatedPriority: 'IT优先级',
+        estimatedFixTime: '预计修复时间',
+        cause: '原因',
         status: '状态',
         duration: '耗时',
         created: '创建时间',
@@ -223,10 +254,18 @@ const translations = {
         clear: '清除',
         reset: '重置',
         applyFilters: '应用筛选',
-        approvedPerTotal: '已批准 / 总数',
+        approvedPerTotal: '已完成 / 总数',
         refreshData: '刷新数据',
         showingFirst: '显示',
         of: '/',
+        priorityComparison: '优先级对比 (请求者 vs IT)',
+        requestorPriority: '请求者优先级',
+        itPriority: 'IT优先级',
+        rootCauseBreakdown: '根本原因分布',
+        rootCauseSla: '根本原因 × SLA按优先级',
+        withinSla: 'SLA内',
+        overSla: '超出SLA',
+        percentage: '百分比',
     },
 };
 
@@ -325,7 +364,20 @@ const SLA_TIERS = [
     { key: '24-72h', max: 72, color: '#f97316', label: '24-72h' },
     { key: '>72h', max: Infinity, color: '#ef4444', label: '> 72h' },
 ];
-const SLA_THRESHOLD_HOURS = 24; // Default SLA threshold
+const SLA_THRESHOLDS = {
+    P0: 4,    // P0 = within 4 hours
+    P1: 8,    // P1 = within 8 hours
+    P2: 240,  // P2 = within 10 days (240 hours)
+};
+const DEFAULT_SLA_THRESHOLD = 24;
+
+const getSlaThreshold = (evaluatedPriority) => {
+    if (!evaluatedPriority) return DEFAULT_SLA_THRESHOLD;
+    if (evaluatedPriority.startsWith('P0')) return SLA_THRESHOLDS.P0;
+    if (evaluatedPriority.startsWith('P1')) return SLA_THRESHOLDS.P1;
+    if (evaluatedPriority.startsWith('P2')) return SLA_THRESHOLDS.P2;
+    return DEFAULT_SLA_THRESHOLD;
+};
 
 // --- Quarter generation: Q4-2025 through current quarter ---
 const generateQuarterNames = () => {
@@ -379,13 +431,18 @@ const getSlaTier = (hours) => {
 
 // --- Normalize Chinese status values to English ---
 const STATUS_MAP = {
-    '已结束': 'Completed',
     '审批中': 'Running',
     '已撤销': 'Terminated',
     '已拒绝': 'Rejected',
     '已通过': 'Approved',
 };
-const normalizeStatus = (raw) => STATUS_MAP[raw] || raw;
+const normalizeStatus = (rawStatus, approvalResult) => {
+    if (rawStatus === '已结束') {
+        if (approvalResult === 'Rejected') return 'Rejected';
+        return 'Completed';
+    }
+    return STATUS_MAP[rawStatus] || rawStatus;
+};
 
 const NO_PRIORITY = 'No Priority';
 const UNASSIGNED = 'Unassigned';
@@ -401,7 +458,7 @@ const statusColors = {
 
 // --- Fallback data ---
 const fallbackData = [
-    { requestNo: 'DEMO-001', type: 'Bug', priority: 'P0 เคสด่วน', platform: 'Web', title: 'Demo ticket', assignee: 'Demo User', estimatedFixTime: '', created: '2025-10-01', completed: '2025-10-01', status: 'Approved', duration: '02:30:00', creator: 'Demo', department: 'IT', quarter: 'Q4-2025' },
+    { requestNo: 'DEMO-001', type: 'Bug', priority: 'P0 เคสด่วน', evaluatedPriority: 'P0 เร่งด่วน', platform: 'Web', title: 'Demo ticket', assignee: 'Demo User', estimatedFixTime: '', cause: '', created: '2025-10-01', completed: '2025-10-01', status: 'Completed', duration: '02:30:00', creator: 'Demo', department: 'IT', quarter: 'Q4-2025' },
 ];
 
 // --- Fetch sheet data ---
@@ -431,13 +488,16 @@ const parseSheetData = (parsed, quarterName) => {
         requestNo: findCol(headers, 'Request No.') >= 0 ? findCol(headers, 'Request No.') : findColIncludes(headers, 'Request'),
         type: findColIncludes(headers, 'ประเภทปัญหา') >= 0 ? findColIncludes(headers, 'ประเภทปัญหา') : findColIncludes(headers, 'Type'),
         priority: findColIncludes(headers, 'ความเร่งด่วน') >= 0 ? findColIncludes(headers, 'ความเร่งด่วน') : findColIncludes(headers, 'Priority'),
+        evaluatedPriority: findColIncludes(headers, 'ความสำคัญที่ประเมิน') >= 0 ? findColIncludes(headers, 'ความสำคัญที่ประเมิน') : findColIncludes(headers, 'Evaluated Priority'),
         platform: findColIncludes(headers, 'แพลตฟอร์ม') >= 0 ? findColIncludes(headers, 'แพลตฟอร์ม') : findColIncludes(headers, 'Platform'),
         title: findColIncludes(headers, 'หัวข้อปัญหา') >= 0 ? findColIncludes(headers, 'หัวข้อปัญหา') : findColIncludes(headers, 'Title'),
         assignee: findCol(headers, 'Assignee') >= 0 ? findCol(headers, 'Assignee') : findColIncludes(headers, 'Assignee'),
         estimatedFixTime: findColIncludes(headers, 'Estimated Fix Time'),
+        cause: findColIncludes(headers, 'สาเหตุของปัญหา') >= 0 ? findColIncludes(headers, 'สาเหตุของปัญหา') : findColIncludes(headers, 'Cause'),
         created: findColIncludes(headers, '创建时间') >= 0 ? findColIncludes(headers, '创建时间') : findColIncludes(headers, 'Created'),
         completed: findColIncludes(headers, '完成时间') >= 0 ? findColIncludes(headers, '完成时间') : findColIncludes(headers, 'Completed'),
         status: findColIncludes(headers, '审批状态') >= 0 ? findColIncludes(headers, '审批状态') : findColIncludes(headers, 'Status'),
+        approvalResult: findColIncludes(headers, '审批结果') >= 0 ? findColIncludes(headers, '审批结果') : findColIncludes(headers, 'Approval'),
         duration: findColIncludes(headers, '耗时') >= 0 ? findColIncludes(headers, '耗时') : findColIncludes(headers, 'Duration'),
         creator: findColIncludes(headers, '创建人') >= 0 ? findColIncludes(headers, '创建人') : findColIncludes(headers, 'Creator'),
         department: findColIncludes(headers, '创建人部门') >= 0 ? findColIncludes(headers, '创建人部门') : findColIncludes(headers, 'Department'),
@@ -453,17 +513,22 @@ const parseSheetData = (parsed, quarterName) => {
         const durationStr = (r[idx.duration] || '').trim();
         const durationHours = parseDuration(durationStr);
 
+        const rawStatus = (r[idx.status] || '').trim();
+        const approvalResult = (r[idx.approvalResult] || '').trim();
+
         records.push({
             requestNo,
             type: (r[idx.type] || '').trim(),
             priority: (r[idx.priority] || '').trim(),
+            evaluatedPriority: (r[idx.evaluatedPriority] || '').trim(),
             platform: (r[idx.platform] || '').trim(),
             title: (r[idx.title] || '').trim(),
             assignee: (r[idx.assignee] || '').trim(),
             estimatedFixTime: (r[idx.estimatedFixTime] || '').trim(),
+            cause: (r[idx.cause] || '').trim(),
             created: (r[idx.created] || '').trim(),
             completed: (r[idx.completed] || '').trim(),
-            status: normalizeStatus((r[idx.status] || '').trim()),
+            status: normalizeStatus(rawStatus, approvalResult),
             durationStr,
             durationHours,
             creator: (r[idx.creator] || '').trim(),
@@ -493,8 +558,10 @@ export default function SupportDashboard({ dark, lang }) {
         platforms: [],
         types: [],
         priorities: [],
+        evaluatedPriorities: [],
         assignees: [],
         statuses: [],
+        causes: [],
     });
 
     const [showFilterModal, setShowFilterModal] = useState(false);
@@ -564,8 +631,10 @@ export default function SupportDashboard({ dark, lang }) {
         platforms: [...new Set(data.map(d => d.platform))].filter(Boolean).sort(),
         types: [...new Set(data.map(d => d.type))].filter(Boolean).sort(),
         priorities: [...new Set(data.map(d => d.priority || NO_PRIORITY))].sort(),
+        evaluatedPriorities: [...new Set(data.map(d => d.evaluatedPriority || NO_PRIORITY))].sort(),
         assignees: [...new Set(data.map(d => d.assignee || UNASSIGNED))].sort(),
         statuses: [...new Set(data.map(d => d.status))].filter(Boolean).sort(),
+        causes: [...new Set(data.map(d => d.cause).filter(Boolean))].sort(),
     }), [data]);
 
     // --- Filtered data ---
@@ -575,8 +644,10 @@ export default function SupportDashboard({ dark, lang }) {
             if (filters.platforms.length && !filters.platforms.includes(d.platform)) return false;
             if (filters.types.length && !filters.types.includes(d.type)) return false;
             if (filters.priorities.length && !filters.priorities.includes(d.priority || NO_PRIORITY)) return false;
+            if (filters.evaluatedPriorities.length && !filters.evaluatedPriorities.includes(d.evaluatedPriority || NO_PRIORITY)) return false;
             if (filters.assignees.length && !filters.assignees.includes(d.assignee || UNASSIGNED)) return false;
             if (filters.statuses.length && !filters.statuses.includes(d.status)) return false;
+            if (filters.causes.length && !filters.causes.includes(d.cause)) return false;
             return true;
         });
     }, [data, filters]);
@@ -584,13 +655,16 @@ export default function SupportDashboard({ dark, lang }) {
     // --- KPI calculations ---
     const kpis = useMemo(() => {
         const total = filtered.length;
-        const resolved = filtered.filter(d => d.status === 'Approved' || d.status === 'Completed').length;
+        const resolved = filtered.filter(d => d.status === 'Completed').length;
         const resolvedRate = total > 0 ? (resolved / total * 100) : 0;
         const withDuration = filtered.filter(d => d.durationHours != null);
         const avgResolution = withDuration.length > 0
             ? withDuration.reduce((s, d) => s + d.durationHours, 0) / withDuration.length
             : 0;
-        const withinSla = withDuration.filter(d => d.durationHours <= SLA_THRESHOLD_HOURS).length;
+        const withinSla = withDuration.filter(d => {
+            const threshold = getSlaThreshold(d.evaluatedPriority);
+            return d.durationHours <= threshold;
+        }).length;
         const slaCompliance = withDuration.length > 0 ? (withinSla / withDuration.length * 100) : 0;
 
         return { total, resolvedRate, avgResolution, slaCompliance };
@@ -603,7 +677,8 @@ export default function SupportDashboard({ dark, lang }) {
             const key = d.type || 'Unknown';
             map[key] = (map[key] || 0) + 1;
         });
-        return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+        const total = filtered.length;
+        return Object.entries(map).map(([name, value]) => ({ name, value, pct: total > 0 ? Math.round(value / total * 1000) / 10 : 0 })).sort((a, b) => b.value - a.value);
     }, [filtered]);
 
     // --- Chart data: Cases by Platform ---
@@ -613,7 +688,8 @@ export default function SupportDashboard({ dark, lang }) {
             const key = d.platform || 'Unknown';
             map[key] = (map[key] || 0) + 1;
         });
-        return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+        const total = filtered.length;
+        return Object.entries(map).map(([name, value]) => ({ name, value, pct: total > 0 ? Math.round(value / total * 1000) / 10 : 0 })).sort((a, b) => b.value - a.value);
     }, [filtered]);
 
     // --- Chart data: Resolution Time Distribution ---
@@ -627,7 +703,8 @@ export default function SupportDashboard({ dark, lang }) {
                 buckets[idx].count++;
             }
         });
-        return buckets;
+        const total = buckets.reduce((s, b) => s + b.count, 0);
+        return buckets.map(b => ({ ...b, pct: total > 0 ? Math.round(b.count / total * 1000) / 10 : 0 }));
     }, [filtered]);
 
     // --- Chart data: Workload by Assignee ---
@@ -642,8 +719,10 @@ export default function SupportDashboard({ dark, lang }) {
                 map[key].withDuration++;
             }
         });
-        return Object.values(map)
-            .map(a => ({ ...a, avgHours: a.withDuration > 0 ? Math.round(a.totalHours / a.withDuration * 10) / 10 : 0 }))
+        const all = Object.values(map);
+        const total = all.reduce((s, a) => s + a.count, 0);
+        return all
+            .map(a => ({ ...a, avgHours: a.withDuration > 0 ? Math.round(a.totalHours / a.withDuration * 10) / 10 : 0, pct: total > 0 ? Math.round(a.count / total * 1000) / 10 : 0 }))
             .filter(a => a.count >= 5)
             .sort((a, b) => b.count - a.count);
     }, [filtered]);
@@ -673,6 +752,53 @@ export default function SupportDashboard({ dark, lang }) {
             });
     }, [filtered]);
 
+    // --- Chart data: Priority Comparison (Requestor vs IT) ---
+    const priorityComparisonData = useMemo(() => {
+        const levels = ['P0', 'P1', 'P2'];
+        const totalReq = filtered.filter(d => d.priority).length;
+        const totalIt = filtered.filter(d => d.evaluatedPriority).length;
+        return levels.map(level => {
+            const requestor = filtered.filter(d => d.priority && d.priority.startsWith(level)).length;
+            const it = filtered.filter(d => d.evaluatedPriority && d.evaluatedPriority.startsWith(level)).length;
+            return {
+                name: level, requestor, it,
+                requestorPct: totalReq > 0 ? Math.round(requestor / totalReq * 1000) / 10 : 0,
+                itPct: totalIt > 0 ? Math.round(it / totalIt * 1000) / 10 : 0,
+            };
+        });
+    }, [filtered]);
+
+    // --- Chart data: Root Cause Breakdown ---
+    const causeChartData = useMemo(() => {
+        const withCause = filtered.filter(d => d.cause);
+        if (withCause.length === 0) return [];
+        const map = {};
+        withCause.forEach(d => {
+            map[d.cause] = (map[d.cause] || 0) + 1;
+        });
+        const total = withCause.length;
+        return Object.entries(map)
+            .map(([name, value]) => ({ name, value, pct: Math.round(value / total * 1000) / 10 }))
+            .sort((a, b) => b.value - a.value);
+    }, [filtered]);
+
+    // --- Chart data: Root Cause × SLA by Priority ---
+    const causeSlaData = useMemo(() => {
+        const withCauseAndDuration = filtered.filter(d => d.cause && d.durationHours != null);
+        if (withCauseAndDuration.length === 0) return [];
+        const map = {};
+        withCauseAndDuration.forEach(d => {
+            if (!map[d.cause]) map[d.cause] = { name: d.cause, withinSla: 0, overSla: 0 };
+            const threshold = getSlaThreshold(d.evaluatedPriority);
+            if (d.durationHours <= threshold) map[d.cause].withinSla++;
+            else map[d.cause].overSla++;
+        });
+        return Object.values(map).map(d => {
+            const total = d.withinSla + d.overSla;
+            return { ...d, withinSlaPct: total > 0 ? Math.round(d.withinSla / total * 1000) / 10 : 0, overSlaPct: total > 0 ? Math.round(d.overSla / total * 1000) / 10 : 0 };
+        }).sort((a, b) => (b.withinSla + b.overSla) - (a.withinSla + a.overSla));
+    }, [filtered]);
+
     // --- Table data ---
     const tableData = useMemo(() => {
         const getVal = (row, key) => {
@@ -683,7 +809,7 @@ export default function SupportDashboard({ dark, lang }) {
     }, [filtered, tableSort]);
 
     // --- Clear filters ---
-    const clearFilters = () => setFilters({ quarters: [], platforms: [], types: [], priorities: [], assignees: [], statuses: [] });
+    const clearFilters = () => setFilters({ quarters: [], platforms: [], types: [], priorities: [], evaluatedPriorities: [], assignees: [], statuses: [], causes: [] });
     const hasFilters = Object.values(filters).some(f => f.length > 0);
 
     // --- Styles ---
@@ -771,8 +897,10 @@ export default function SupportDashboard({ dark, lang }) {
                 <MultiSelect options={filterOptions.platforms} selected={filters.platforms} onChange={v => setFilters(f => ({ ...f, platforms: v }))} label={t.allPlatforms} dark={dark} />
                 <MultiSelect options={filterOptions.types} selected={filters.types} onChange={v => setFilters(f => ({ ...f, types: v }))} label={t.allTypes} dark={dark} />
                 <MultiSelect options={filterOptions.priorities} selected={filters.priorities} onChange={v => setFilters(f => ({ ...f, priorities: v }))} label={t.allPriorities} dark={dark} />
+                <MultiSelect options={filterOptions.evaluatedPriorities} selected={filters.evaluatedPriorities} onChange={v => setFilters(f => ({ ...f, evaluatedPriorities: v }))} label={t.allEvalPriorities} dark={dark} />
                 <MultiSelect options={filterOptions.assignees} selected={filters.assignees} onChange={v => setFilters(f => ({ ...f, assignees: v }))} label={t.allAssignees} dark={dark} />
                 <MultiSelect options={filterOptions.statuses} selected={filters.statuses} onChange={v => setFilters(f => ({ ...f, statuses: v }))} label={t.allStatuses} dark={dark} />
+                {filterOptions.causes.length > 0 && <MultiSelect options={filterOptions.causes} selected={filters.causes} onChange={v => setFilters(f => ({ ...f, causes: v }))} label={t.allCauses} dark={dark} />}
                 {hasFilters && (
                     <button onClick={clearFilters} className="text-sm text-blue-500 hover:text-blue-400 flex items-center gap-1">
                         <X size={14} /> {t.clear}
@@ -789,8 +917,10 @@ export default function SupportDashboard({ dark, lang }) {
                     { title: t.allPlatforms, key: 'platforms', options: filterOptions.platforms, selected: filters.platforms },
                     { title: t.allTypes, key: 'types', options: filterOptions.types, selected: filters.types },
                     { title: t.allPriorities, key: 'priorities', options: filterOptions.priorities, selected: filters.priorities },
+                    { title: t.allEvalPriorities, key: 'evaluatedPriorities', options: filterOptions.evaluatedPriorities, selected: filters.evaluatedPriorities },
                     { title: t.allAssignees, key: 'assignees', options: filterOptions.assignees, selected: filters.assignees },
                     { title: t.allStatuses, key: 'statuses', options: filterOptions.statuses, selected: filters.statuses },
+                    ...(filterOptions.causes.length > 0 ? [{ title: t.allCauses, key: 'causes', options: filterOptions.causes, selected: filters.causes }] : []),
                 ];
                 return <MobileFilterSheet dark={dark} onClose={() => setShowFilterModal(false)} onClear={clearFilters} hasFilters={hasFilters} totalActive={totalActive} sections={filterSections} setFilters={setFilters} t={t} />;
             })()}
@@ -827,7 +957,7 @@ export default function SupportDashboard({ dark, lang }) {
                         <Shield className="text-amber-500" size={24} />
                     </div>
                     <div className={`text-3xl font-bold ${dark ? 'text-white' : 'text-slate-900'}`}>{kpis.slaCompliance.toFixed(1)}%</div>
-                    <div className={`text-sm mt-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>&le; {SLA_THRESHOLD_HOURS}h</div>
+                    <div className={`text-sm mt-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>P0≤{SLA_THRESHOLDS.P0}h · P1≤{SLA_THRESHOLDS.P1}h · P2≤{SLA_THRESHOLDS.P2/24}d</div>
                 </div>
             </div>
 
@@ -842,8 +972,8 @@ export default function SupportDashboard({ dark, lang }) {
                                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
                                 <XAxis type="number" tick={{ fill: ct.tick }} />
                                 <YAxis dataKey="name" type="category" width={150} tick={{ fill: ct.tick, fontSize: 12 }} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
-                                <Bar dataKey="value" name={t.count} fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]} />
+                                <Bar dataKey="value" name={t.count} fill="#3b82f6" radius={[0, 4, 4, 0]} label={{ position: 'right', fill: ct.tick || '#64748b', fontSize: 11, formatter: (v) => { const d = typeChartData.find(x => x.value === v); return d ? `${v} (${d.pct}%)` : v; } }} />
                             </BarChart>
                         </ResponsiveContainer>
                     ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
@@ -855,10 +985,10 @@ export default function SupportDashboard({ dark, lang }) {
                     {platformChartData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={300}>
                             <PieChart>
-                                <Pie data={platformChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                                <Pie data={platformChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent, value }) => `${name} ${value} (${(percent * 100).toFixed(1)}%)`}>
                                     {platformChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                                 </Pie>
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, name]} />
                                 <Legend />
                             </PieChart>
                         </ResponsiveContainer>
@@ -874,8 +1004,8 @@ export default function SupportDashboard({ dark, lang }) {
                                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
                                 <XAxis dataKey="name" tick={{ fill: ct.tick }} />
                                 <YAxis tick={{ fill: ct.tick }} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
-                                <Bar dataKey="count" name={t.count} radius={[4, 4, 0, 0]}>
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]} />
+                                <Bar dataKey="count" name={t.count} radius={[4, 4, 0, 0]} label={{ position: 'top', fill: ct.tick || '#64748b', fontSize: 11, formatter: (v) => { const d = resolutionDistData.find(x => x.count === v); return d && v > 0 ? `${v} (${d.pct}%)` : ''; } }}>
                                     {resolutionDistData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                                 </Bar>
                             </BarChart>
@@ -893,7 +1023,7 @@ export default function SupportDashboard({ dark, lang }) {
                                 <XAxis dataKey="name" tick={{ fill: ct.tick, fontSize: 11 }} angle={-30} textAnchor="end" height={60} />
                                 <YAxis yAxisId="left" tick={{ fill: ct.tick }} />
                                 <YAxis yAxisId="right" orientation="right" tick={{ fill: ct.tick }} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { if (name === t.count) return [`${value} (${props.payload.pct}%)`, name]; return [value, name]; }} />
                                 <Legend />
                                 <Bar yAxisId="left" dataKey="count" name={t.count} fill="#3b82f6" radius={[4, 4, 0, 0]} />
                                 <Bar yAxisId="right" dataKey="avgHours" name={t.avgTime} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
@@ -902,6 +1032,79 @@ export default function SupportDashboard({ dark, lang }) {
                     ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
                 </div>
             </div>
+
+            {/* Priority Comparison + Root Cause Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Priority Comparison */}
+                <div className={`${panel} p-6`}>
+                    <h3 className={`text-lg font-semibold mb-4 ${dark ? 'text-white' : 'text-slate-900'}`}>{t.priorityComparison}</h3>
+                    {priorityComparisonData.some(d => d.requestor > 0 || d.it > 0) ? (
+                        <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={priorityComparisonData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                                <XAxis dataKey="name" tick={{ fill: ct.tick }} />
+                                <YAxis tick={{ fill: ct.tick }} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { if (name === t.requestorPriority) return [`${value} (${props.payload.requestorPct}%)`, name]; return [`${value} (${props.payload.itPct}%)`, name]; }} />
+                                <Legend />
+                                <Bar dataKey="requestor" name={t.requestorPriority} fill="#3b82f6" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: '#3b82f6', fontSize: 11, formatter: (v) => { const d = priorityComparisonData.find(x => x.requestor === v); return d && v > 0 ? `${v} (${d.requestorPct}%)` : ''; } }} />
+                                <Bar dataKey="it" name={t.itPriority} fill="#f59e0b" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: '#f59e0b', fontSize: 11, formatter: (v) => { const d = priorityComparisonData.find(x => x.it === v); return d && v > 0 ? `${v} (${d.itPct}%)` : ''; } }} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
+                </div>
+
+                {/* Root Cause Breakdown */}
+                <div className={`${panel} p-6`}>
+                    <h3 className={`text-lg font-semibold mb-4 ${dark ? 'text-white' : 'text-slate-900'}`}>{t.rootCauseBreakdown}</h3>
+                    {causeChartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={causeChartData} layout="vertical">
+                                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                                <XAxis type="number" tick={{ fill: ct.tick }} />
+                                <YAxis dataKey="name" type="category" width={180} tick={{ fill: ct.tick, fontSize: 11 }} />
+                                <Tooltip
+                                    contentStyle={ct.tooltip}
+                                    labelStyle={{ color: ct.tooltipLabel }}
+                                    itemStyle={{ color: ct.tooltipItem }}
+                                    formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]}
+                                />
+                                <Bar dataKey="value" name={t.count} fill="#8b5cf6" radius={[0, 4, 4, 0]} label={{ position: 'right', fill: ct.tick || '#64748b', fontSize: 11, formatter: (v) => { const d = causeChartData.find(x => x.value === v); return d ? `${v} (${d.pct}%)` : v; } }}>
+                                    {causeChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
+                </div>
+            </div>
+
+            {/* Root Cause × SLA */}
+            {causeSlaData.length > 0 && (
+                <div className={`${panel} p-6`}>
+                    <h3 className={`text-lg font-semibold mb-4 ${dark ? 'text-white' : 'text-slate-900'}`}>{t.rootCauseSla}</h3>
+                    <div className="flex flex-wrap gap-3 mb-4">
+                        <div className="flex items-center gap-1.5 text-sm">
+                            <span className="w-3 h-3 rounded-sm bg-emerald-500"></span>
+                            <span className={dark ? 'text-slate-300' : 'text-slate-600'}>{t.withinSla}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-sm">
+                            <span className="w-3 h-3 rounded-sm bg-red-500"></span>
+                            <span className={dark ? 'text-slate-300' : 'text-slate-600'}>{t.overSla}</span>
+                        </div>
+                        <span className={`text-xs ${dark ? 'text-slate-500' : 'text-slate-400'}`}>(P0≤{SLA_THRESHOLDS.P0}h · P1≤{SLA_THRESHOLDS.P1}h · P2≤{SLA_THRESHOLDS.P2/24}d)</span>
+                    </div>
+                    <ResponsiveContainer width="100%" height={Math.max(250, causeSlaData.length * 50)}>
+                        <BarChart data={causeSlaData} layout="vertical">
+                            <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                            <XAxis type="number" tick={{ fill: ct.tick }} />
+                            <YAxis dataKey="name" type="category" width={180} tick={{ fill: ct.tick, fontSize: 11 }} />
+                            <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { const pctKey = name === t.withinSla ? 'withinSlaPct' : 'overSlaPct'; return [`${value} (${props.payload[pctKey]}%)`, name]; }} />
+                            <Legend />
+                            <Bar dataKey="withinSla" name={t.withinSla} stackId="sla" fill="#10b981" />
+                            <Bar dataKey="overSla" name={t.overSla} stackId="sla" fill="#ef4444" />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
 
             {/* SLA Performance Panel */}
             <div className={`${panel} p-6`}>
@@ -920,7 +1123,7 @@ export default function SupportDashboard({ dark, lang }) {
                             <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
                             <XAxis type="number" tick={{ fill: ct.tick }} />
                             <YAxis dataKey="name" type="category" width={120} tick={{ fill: ct.tick, fontSize: 12 }} />
-                            <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                            <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { const total = SLA_TIERS.reduce((s, t) => s + (props.payload[t.key] || 0), 0); const pct = total > 0 ? Math.round(value / total * 1000) / 10 : 0; return [`${value} (${pct}%)`, name]; }} />
                             <Legend />
                             {SLA_TIERS.map(tier => (
                                 <Bar key={tier.key} dataKey={tier.key} name={tier.label} stackId="sla" fill={tier.color} />
@@ -947,6 +1150,8 @@ export default function SupportDashboard({ dark, lang }) {
                                 <SortHeader label={t.platform} sortKey="platform" />
                                 <th className={`${thClass} max-w-[200px]`}>{t.titleCol}</th>
                                 <SortHeader label={t.assignee} sortKey="assignee" />
+                                <SortHeader label={t.evaluatedPriority} sortKey="evaluatedPriority" />
+                                <SortHeader label={t.estimatedFixTime} sortKey="estimatedFixTime" />
                                 <SortHeader label={t.status} sortKey="status" />
                                 <SortHeader label={t.duration} sortKey="durationHours" />
                                 <SortHeader label={t.created} sortKey="created" />
@@ -963,6 +1168,8 @@ export default function SupportDashboard({ dark, lang }) {
                                         <td className={tdClass}>{row.platform}</td>
                                         <td className={`${tdClass} max-w-[200px] truncate`} title={row.title}>{row.title}</td>
                                         <td className={tdClass}>{row.assignee}</td>
+                                        <td className={`${tdClass} text-xs`}>{row.evaluatedPriority || '-'}</td>
+                                        <td className={`${tdClass} text-xs`}>{row.estimatedFixTime || '-'}</td>
                                         <td className={tdClass}>
                                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sc.bg} ${sc.text}`}>
                                                 {row.status}
@@ -976,7 +1183,7 @@ export default function SupportDashboard({ dark, lang }) {
                             })}
                             {tableData.length === 0 && (
                                 <tr>
-                                    <td colSpan={9} className={`${tdClass} text-center py-8`}>{t.noData}</td>
+                                    <td colSpan={11} className={`${tdClass} text-center py-8`}>{t.noData}</td>
                                 </tr>
                             )}
                         </tbody>
