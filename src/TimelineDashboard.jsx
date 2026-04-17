@@ -390,12 +390,13 @@ export default function TimelineDashboard({ dark, lang, filteredData, epicMap, t
             }
 
             const dayRow = dateColumns.map((d, i) => {
+                const isoDate = toLocalISODate(d);
                 const isFirstOfMonth = d.getDate() === 1;
-                const isToday = toLocalISODate(d) === todayStr;
+                const isToday = isoDate === todayStr;
                 const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                 const isMonday = d.getDay() === 1;
                 return (
-                    <div key={i} className={`shrink-0 flex flex-col items-center justify-center text-[10px] border-r ${
+                    <div key={isoDate} className={`shrink-0 flex flex-col items-center justify-center text-[10px] border-r ${
                         isToday ? 'bg-red-500/10 font-bold' : isWeekend ? (dark ? 'bg-slate-700/30' : 'bg-slate-50') : ''
                     } ${dark ? 'border-slate-700/50 text-slate-400' : 'border-slate-100 text-slate-500'}`} style={{ width: colWidth }}>
                         {(isFirstOfMonth || i === 0) && (

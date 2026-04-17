@@ -4,26 +4,7 @@ import {
     PieChart, Pie, Cell
 } from 'recharts';
 import { Briefcase, CheckCircle, Clock, Filter, Shield, RefreshCw, ChevronDown, X, ArrowUpDown } from 'lucide-react';
-
-// --- CSV Parser (copied from App.jsx) ---
-const parseCSV = (str) => {
-    const arr = [];
-    let quote = false;
-    let row = 0, col = 0;
-    for (let c = 0; c < str.length; c++) {
-        let cc = str[c], nc = str[c + 1];
-        arr[row] = arr[row] || [];
-        arr[row][col] = arr[row][col] || '';
-        if (cc === '"' && quote && nc === '"') { arr[row][col] += cc; ++c; continue; }
-        if (cc === '"') { quote = !quote; continue; }
-        if (cc === ',' && !quote) { ++col; continue; }
-        if (cc === '\r' && nc === '\n' && !quote) { ++row; col = 0; ++c; continue; }
-        if (cc === '\n' && !quote) { ++row; col = 0; continue; }
-        if (cc === '\r' && !quote) { ++row; col = 0; continue; }
-        arr[row][col] += cc;
-    }
-    return arr;
-};
+import { parseCSV } from './utils/parseCSV';
 
 // --- MultiSelect (copied from App.jsx) ---
 function MultiSelect({ options, selected, onChange, label, dark }) {
@@ -458,12 +439,21 @@ const fallbackData = [
 ];
 
 // --- Fetch sheet data ---
-const fetchSheet = async (sheetName) => {
+// In-flight request cache: concurrent calls for the same sheet share one fetch
+// (guards against StrictMode double-mount and overlapping auto-refresh).
+const inFlightSheets = new Map();
+const fetchSheet = (sheetName) => {
+    const cached = inFlightSheets.get(sheetName);
+    if (cached) return cached;
     const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const text = await response.text();
-    return parseCSV(text);
+    const promise = (async () => {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const text = await response.text();
+        return parseCSV(text);
+    })().finally(() => inFlightSheets.delete(sheetName));
+    inFlightSheets.set(sheetName, promise);
+    return promise;
 };
 
 const findCol = (headers, name) => {
@@ -540,7 +530,12 @@ const parseSheetData = (parsed, quarterName) => {
 // ============================================================
 export default function SupportDashboard({ dark, lang }) {
     const t = translations[lang] || translations.th;
-    const ct = chartTheme(dark);
+    const ct = useMemo(() => chartTheme(dark), [dark]);
+    const axisTick = useMemo(() => ({ fill: ct.tick }), [ct.tick]);
+    const axisTick12 = useMemo(() => ({ fill: ct.tick, fontSize: 12 }), [ct.tick]);
+    const axisTick11 = useMemo(() => ({ fill: ct.tick, fontSize: 11 }), [ct.tick]);
+    const tooltipLabelStyle = useMemo(() => ({ color: ct.tooltipLabel }), [ct.tooltipLabel]);
+    const tooltipItemStyle = useMemo(() => ({ color: ct.tooltipItem }), [ct.tooltipItem]);
 
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -966,9 +961,9 @@ export default function SupportDashboard({ dark, lang }) {
                         <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={typeChartData} layout="vertical">
                                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                                <XAxis type="number" tick={{ fill: ct.tick }} />
-                                <YAxis dataKey="name" type="category" width={150} tick={{ fill: ct.tick, fontSize: 12 }} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]} />
+                                <XAxis type="number" tick={axisTick} />
+                                <YAxis dataKey="name" type="category" width={150} tick={axisTick12} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]} />
                                 <Bar dataKey="value" name={t.count} fill="#3b82f6" radius={[0, 4, 4, 0]} label={({ x, y, width, height, value, index }) => <text x={x + width + 4} y={y + height / 2} dy={4} fill={ct.tick || '#64748b'} fontSize={11}>{value} ({typeChartData[index]?.pct}%)</text>} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -982,9 +977,9 @@ export default function SupportDashboard({ dark, lang }) {
                         <ResponsiveContainer width="100%" height={300}>
                             <PieChart>
                                 <Pie data={platformChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent, value }) => `${name} ${value} (${(percent * 100).toFixed(1)}%)`}>
-                                    {platformChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                    {platformChartData.map((entry, i) => <Cell key={entry.name} fill={COLORS[i % COLORS.length]} />)}
                                 </Pie>
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, name]} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, name]} />
                                 <Legend />
                             </PieChart>
                         </ResponsiveContainer>
@@ -998,11 +993,11 @@ export default function SupportDashboard({ dark, lang }) {
                         <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={resolutionDistData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                                <XAxis dataKey="name" tick={{ fill: ct.tick }} />
-                                <YAxis tick={{ fill: ct.tick }} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]} />
+                                <XAxis dataKey="name" tick={axisTick} />
+                                <YAxis tick={axisTick} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]} />
                                 <Bar dataKey="count" name={t.count} radius={[4, 4, 0, 0]} label={({ x, y, width, value, index }) => value > 0 ? <text x={x + width / 2} y={y - 6} textAnchor="middle" fill={ct.tick || '#64748b'} fontSize={11}>{value} ({resolutionDistData[index]?.pct}%)</text> : null}>
-                                    {resolutionDistData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                                    {resolutionDistData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
@@ -1016,10 +1011,10 @@ export default function SupportDashboard({ dark, lang }) {
                         <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={assigneeChartData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                                <XAxis dataKey="name" tick={{ fill: ct.tick, fontSize: 11 }} angle={-30} textAnchor="end" height={60} />
-                                <YAxis yAxisId="left" tick={{ fill: ct.tick }} />
-                                <YAxis yAxisId="right" orientation="right" tick={{ fill: ct.tick }} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { if (name === t.count) return [`${value} (${props.payload.pct}%)`, name]; return [value, name]; }} />
+                                <XAxis dataKey="name" tick={axisTick11} angle={-30} textAnchor="end" height={60} />
+                                <YAxis yAxisId="left" tick={axisTick} />
+                                <YAxis yAxisId="right" orientation="right" tick={axisTick} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => { if (name === t.count) return [`${value} (${props.payload.pct}%)`, name]; return [value, name]; }} />
                                 <Legend />
                                 <Bar yAxisId="left" dataKey="count" name={t.count} fill="#3b82f6" radius={[4, 4, 0, 0]} />
                                 <Bar yAxisId="right" dataKey="avgHours" name={t.avgTime} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
@@ -1038,9 +1033,9 @@ export default function SupportDashboard({ dark, lang }) {
                         <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={priorityComparisonData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                                <XAxis dataKey="name" tick={{ fill: ct.tick }} />
-                                <YAxis tick={{ fill: ct.tick }} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { if (name === t.requestorPriority) return [`${value} (${props.payload.requestorPct}%)`, name]; return [`${value} (${props.payload.itPct}%)`, name]; }} />
+                                <XAxis dataKey="name" tick={axisTick} />
+                                <YAxis tick={axisTick} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => { if (name === t.requestorPriority) return [`${value} (${props.payload.requestorPct}%)`, name]; return [`${value} (${props.payload.itPct}%)`, name]; }} />
                                 <Legend />
                                 <Bar dataKey="requestor" name={t.requestorPriority} fill="#3b82f6" radius={[4, 4, 0, 0]} label={({ x, y, width, value, index }) => value > 0 ? <text x={x + width / 2} y={y - 6} textAnchor="middle" fill="#3b82f6" fontSize={11}>{value} ({priorityComparisonData[index]?.requestorPct}%)</text> : null} />
                                 <Bar dataKey="it" name={t.itPriority} fill="#f59e0b" radius={[4, 4, 0, 0]} label={({ x, y, width, value, index }) => value > 0 ? <text x={x + width / 2} y={y - 6} textAnchor="middle" fill="#f59e0b" fontSize={11}>{value} ({priorityComparisonData[index]?.itPct}%)</text> : null} />
@@ -1056,16 +1051,16 @@ export default function SupportDashboard({ dark, lang }) {
                         <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={causeChartData} layout="vertical">
                                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                                <XAxis type="number" tick={{ fill: ct.tick }} />
-                                <YAxis dataKey="name" type="category" width={180} tick={{ fill: ct.tick, fontSize: 11 }} />
+                                <XAxis type="number" tick={axisTick} />
+                                <YAxis dataKey="name" type="category" width={180} tick={axisTick11} />
                                 <Tooltip
                                     contentStyle={ct.tooltip}
-                                    labelStyle={{ color: ct.tooltipLabel }}
-                                    itemStyle={{ color: ct.tooltipItem }}
+                                    labelStyle={tooltipLabelStyle}
+                                    itemStyle={tooltipItemStyle}
                                     formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]}
                                 />
                                 <Bar dataKey="value" name={t.count} fill="#8b5cf6" radius={[0, 4, 4, 0]} label={({ x, y, width, height, value, index }) => <text x={x + width + 4} y={y + height / 2} dy={4} fill={ct.tick || '#64748b'} fontSize={11}>{value} ({causeChartData[index]?.pct}%)</text>}>
-                                    {causeChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                    {causeChartData.map((entry, i) => <Cell key={entry.name} fill={COLORS[i % COLORS.length]} />)}
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
@@ -1091,9 +1086,9 @@ export default function SupportDashboard({ dark, lang }) {
                     <ResponsiveContainer width="100%" height={Math.max(250, causeSlaData.length * 50)}>
                         <BarChart data={causeSlaData} layout="vertical">
                             <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                            <XAxis type="number" tick={{ fill: ct.tick }} />
-                            <YAxis dataKey="name" type="category" width={180} tick={{ fill: ct.tick, fontSize: 11 }} />
-                            <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { const pctKey = name === t.withinSla ? 'withinSlaPct' : 'overSlaPct'; return [`${value} (${props.payload[pctKey]}%)`, name]; }} />
+                            <XAxis type="number" tick={axisTick} />
+                            <YAxis dataKey="name" type="category" width={180} tick={axisTick11} />
+                            <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => { const pctKey = name === t.withinSla ? 'withinSlaPct' : 'overSlaPct'; return [`${value} (${props.payload[pctKey]}%)`, name]; }} />
                             <Legend />
                             <Bar dataKey="withinSla" name={t.withinSla} stackId="sla" fill="#10b981" />
                             <Bar dataKey="overSla" name={t.overSla} stackId="sla" fill="#ef4444" />
@@ -1117,9 +1112,9 @@ export default function SupportDashboard({ dark, lang }) {
                     <ResponsiveContainer width="100%" height={Math.max(300, slaByAssignee.length * 40)}>
                         <BarChart data={slaByAssignee} layout="vertical">
                             <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                            <XAxis type="number" tick={{ fill: ct.tick }} />
-                            <YAxis dataKey="name" type="category" width={120} tick={{ fill: ct.tick, fontSize: 12 }} />
-                            <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} formatter={(value, name, props) => { const total = SLA_TIERS.reduce((s, tier) => s + (props.payload[tier.key] || 0), 0); const pct = total > 0 ? Math.round(value / total * 1000) / 10 : 0; return [`${value} (${pct}%)`, name]; }} />
+                            <XAxis type="number" tick={axisTick} />
+                            <YAxis dataKey="name" type="category" width={120} tick={axisTick12} />
+                            <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => { const total = SLA_TIERS.reduce((s, tier) => s + (props.payload[tier.key] || 0), 0); const pct = total > 0 ? Math.round(value / total * 1000) / 10 : 0; return [`${value} (${pct}%)`, name]; }} />
                             <Legend />
                             {SLA_TIERS.map(tier => (
                                 <Bar key={tier.key} dataKey={tier.key} name={tier.label} stackId="sla" fill={tier.color} />

@@ -6,6 +6,7 @@ import {
 import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, ChevronUp, ArrowUpDown, X, Target, Bug, TrendingUp, Shield, Zap, Info, PanelLeftClose, PanelLeftOpen, Headphones, GanttChart } from 'lucide-react';
 import SupportDashboard from './SupportDashboard';
 import TimelineDashboard from './TimelineDashboard';
+import { parseCSV } from './utils/parseCSV';
 
 // --- Helper: check if status is excluded from performance metrics ---
 const isExcludedFromPerformance = (status) => {
@@ -134,10 +135,10 @@ function MobileFilterModal({ dark, onClose, onClear, hasFilters, totalActive, se
                 </div>
                 {/* Sections */}
                 <div className="flex-1 overflow-y-auto overscroll-contain">
-                    {sections.map((section, i) => {
+                    {sections.map((section) => {
                         if (section.type === 'toggle') {
                             return (
-                                <div key={i} className={`px-5 py-3 border-b ${dark ? 'border-slate-700/50' : 'border-slate-100'}`}>
+                                <div key={section.key} className={`px-5 py-3 border-b ${dark ? 'border-slate-700/50' : 'border-slate-100'}`}>
                                     <label className={`text-xs font-semibold uppercase tracking-wider mb-2 block ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{t.period}</label>
                                     <div className={`flex items-center gap-1 rounded-lg p-1 ${dark ? 'bg-slate-700' : 'bg-slate-100'}`}>
                                         {section.options.map(opt => (
@@ -737,25 +738,6 @@ const getWeekRange = (weekStr) => {
 };
 
 // --- CSV Parser ---
-const parseCSV = (str) => {
-    const arr = [];
-    let quote = false;
-    let row = 0, col = 0;
-    for (let c = 0; c < str.length; c++) {
-        let cc = str[c], nc = str[c + 1];
-        arr[row] = arr[row] || [];
-        arr[row][col] = arr[row][col] || '';
-        if (cc === '"' && quote && nc === '"') { arr[row][col] += cc; ++c; continue; }
-        if (cc === '"') { quote = !quote; continue; }
-        if (cc === ',' && !quote) { ++col; continue; }
-        if (cc === '\r' && nc === '\n' && !quote) { ++row; col = 0; ++c; continue; }
-        if (cc === '\n' && !quote) { ++row; col = 0; continue; }
-        if (cc === '\r' && !quote) { ++row; col = 0; continue; }
-        arr[row][col] += cc;
-    }
-    return arr;
-};
-
 const toLocalISODate = (date) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -783,12 +765,21 @@ const parseDateStr = (dateStr) => {
 const SHEET_ID = import.meta.env.VITE_DB_LINK || '1ZeJOK6BkHtVX97CDSFcWqODJzBqVmRXx6UO0Q9QbDLk';
 const JIRA_BASE = 'https://jira2.my-group.net/browse';
 
-const fetchSheet = async (sheetName) => {
+// In-flight request cache so concurrent calls for the same sheet (e.g. StrictMode
+// remount or an auto-refresh overlapping a slow initial load) share one fetch.
+const inFlightSheets = new Map();
+const fetchSheet = (sheetName) => {
+    const cached = inFlightSheets.get(sheetName);
+    if (cached) return cached;
     const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const text = await response.text();
-    return parseCSV(text);
+    const promise = (async () => {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const text = await response.text();
+        return parseCSV(text);
+    })().finally(() => inFlightSheets.delete(sheetName));
+    inFlightSheets.set(sheetName, promise);
+    return promise;
 };
 
 // Generate candidate quarter sheet names: Q1-2025 through current quarter only
@@ -808,6 +799,11 @@ const generateQuarterSheetNames = () => {
 };
 
 const findCol = (headers, name) => headers.indexOf(name);
+
+// --- Chart layout constants (stable references — kept at module scope) ---
+const CHART_MARGIN_STD = { top: 20, right: 20, bottom: 20, left: 0 };
+const CHART_MARGIN_HBAR = { top: 5, right: 30, left: 20, bottom: 5 };
+const CHART_MARGIN_LINE = { top: 10, right: 30, bottom: 10, left: 0 };
 
 // --- Chart theme colors ---
 const chartTheme = (dark) => ({
@@ -854,7 +850,10 @@ export default function App() {
         });
     };
     const t = translations[lang];
-    const ct = chartTheme(dark);
+    const ct = useMemo(() => chartTheme(dark), [dark]);
+    const axisTick = useMemo(() => ({ fontSize: 12, fill: ct.tick }), [ct.tick]);
+    const tooltipLabelStyle = useMemo(() => ({ color: ct.tooltipLabel }), [ct.tooltipLabel]);
+    const tooltipItemStyle = useMemo(() => ({ color: ct.tooltipItem }), [ct.tooltipItem]);
 
     const [data, setData] = useState([]);
     const [epicMap, setEpicMap] = useState({});
@@ -1096,12 +1095,26 @@ export default function App() {
         return () => clearInterval(interval);
     }, [loadData]);
 
-    const filterOptions = useMemo(() => {
-        const opts = { weeks: new Set(), months: new Set(), quarters: new Set(), assignees: new Set(), reporters: new Set(), projects: new Set(), fixVersions: new Set(), epicLinks: new Set(), sprints: new Set() };
+    // Period arrays used by both the UI filter and KPI period-comparison memos.
+    // Split out so KPI memos can depend on just these sorted arrays (stable by [data])
+    // rather than the full filterOptions object which also includes assignee/project/etc.
+    const datePeriods = useMemo(() => {
+        const weeks = new Set(), months = new Set(), quarters = new Set();
         data.forEach(item => {
-            if (item.week && item.week !== '-') opts.weeks.add(item.week);
-            if (item.month && item.month !== '-') opts.months.add(item.month);
-            if (item.quarter && item.quarter !== '-') opts.quarters.add(item.quarter);
+            if (item.week && item.week !== '-') weeks.add(item.week);
+            if (item.month && item.month !== '-') months.add(item.month);
+            if (item.quarter && item.quarter !== '-') quarters.add(item.quarter);
+        });
+        return {
+            weeks: [...weeks].sort(),
+            months: [...months].sort(),
+            quarters: [...quarters].sort(),
+        };
+    }, [data]);
+
+    const filterOptions = useMemo(() => {
+        const opts = { assignees: new Set(), reporters: new Set(), projects: new Set(), fixVersions: new Set(), epicLinks: new Set(), sprints: new Set() };
+        data.forEach(item => {
             if (item.assignee) opts.assignees.add(item.assignee);
             if (item.reporter && item.reporter !== 'Unknown') opts.reporters.add(item.reporter);
             if (item.project && item.project !== 'Unknown') opts.projects.add(item.project);
@@ -1110,17 +1123,17 @@ export default function App() {
             if (item.sprints) item.sprints.forEach(s => { if (s) opts.sprints.add(s); });
         });
         return {
-            weeks: Array.from(opts.weeks).sort(),
-            months: Array.from(opts.months).sort(),
-            quarters: Array.from(opts.quarters).sort(),
-            assignees: Array.from(opts.assignees).sort(),
-            reporters: Array.from(opts.reporters).sort(),
-            projects: Array.from(opts.projects).sort(),
-            fixVersions: Array.from(opts.fixVersions).sort(),
-            epicLinks: Array.from(opts.epicLinks).sort(),
-            sprints: Array.from(opts.sprints).sort()
+            weeks: datePeriods.weeks,
+            months: datePeriods.months,
+            quarters: datePeriods.quarters,
+            assignees: [...opts.assignees].sort(),
+            reporters: [...opts.reporters].sort(),
+            projects: [...opts.projects].sort(),
+            fixVersions: [...opts.fixVersions].sort(),
+            epicLinks: [...opts.epicLinks].sort(),
+            sprints: [...opts.sprints].sort()
         };
-    }, [data]);
+    }, [data, datePeriods]);
 
     const filteredData = useMemo(() => {
         return data.filter(item => {
@@ -1255,7 +1268,7 @@ export default function App() {
             if (dv.length === 1) {
                 // Compare selected vs its predecessor
                 const field = filters.dateType === 'weekly' ? 'week' : filters.dateType === 'monthly' ? 'month' : 'quarter';
-                const allPeriods = (field === 'week' ? filterOptions.weeks : field === 'month' ? filterOptions.months : filterOptions.quarters);
+                const allPeriods = (field === 'week' ? datePeriods.weeks : field === 'month' ? datePeriods.months : datePeriods.quarters);
                 const idx = allPeriods.indexOf(dv[0]);
                 if (idx > 0) return { prevPeriod: allPeriods[idx - 1], currPeriod: dv[0], periodField: field };
                 return {};
@@ -1267,22 +1280,20 @@ export default function App() {
         })();
         if (currPeriod && prevPeriod && periodField) {
             let currDevSum = 0, currW = 0, prevDevSum = 0, prevW = 0;
-            // Use full data for prev period (it may be outside current filter), excluding non-performance statuses
-            const nonEpicData = data.filter(d => d.issueType !== 'Epic' && !isExcludedFromPerformance(d.status));
-            const applyNonDateFilters = (d) => {
-                if (filters.statusGroups.length > 0 && !filters.statusGroups.includes(getStatusGroup(d.status))) return false;
-                if (filters.assignees.length > 0 && !filters.assignees.includes(d.assignee)) return false;
-                if (filters.reporters.length > 0 && !filters.reporters.includes(d.reporter)) return false;
-                if (filters.projects.length > 0 && !filters.projects.includes(d.project)) return false;
-                if (filters.fixVersions.length > 0 && !filters.fixVersions.includes(d.fixVersion)) return false;
-                if (filters.epicLinks.length > 0 && !filters.epicLinks.includes(d.epicLink)) return false;
-                return true;
-            };
-            nonEpicData.forEach(d => {
-                if (!applyNonDateFilters(d)) return;
+            // Single pass: use full data (prev period may be outside the date filter)
+            data.forEach(d => {
+                if (d.issueType === 'Epic' || isExcludedFromPerformance(d.status)) return;
+                if (filters.statusGroups.length > 0 && !filters.statusGroups.includes(getStatusGroup(d.status))) return;
+                if (filters.assignees.length > 0 && !filters.assignees.includes(d.assignee)) return;
+                if (filters.reporters.length > 0 && !filters.reporters.includes(d.reporter)) return;
+                if (filters.projects.length > 0 && !filters.projects.includes(d.project)) return;
+                if (filters.fixVersions.length > 0 && !filters.fixVersions.includes(d.fixVersion)) return;
+                if (filters.epicLinks.length > 0 && !filters.epicLinks.includes(d.epicLink)) return;
+                const v = d[periodField];
+                if (v !== currPeriod && v !== prevPeriod) return;
                 const w = d.weight || 0;
-                if (d[periodField] === currPeriod) { currDevSum += d.devTime * w; currW += w; }
-                if (d[periodField] === prevPeriod) { prevDevSum += d.devTime * w; prevW += w; }
+                if (v === currPeriod) { currDevSum += d.devTime * w; currW += w; }
+                else { prevDevSum += d.devTime * w; prevW += w; }
             });
             const currAvg = currW ? currDevSum / currW : 0;
             const prevAvg = prevW ? prevDevSum / prevW : 0;
@@ -1290,7 +1301,7 @@ export default function App() {
         }
 
         return { onTimeRate, bugFixRate, efficiencyImprovement, bugTotal: Math.round(bugWeight), bugOnTime: Math.round(onTimeBugWeight) };
-    }, [performanceData, data, filters, filterOptions]);
+    }, [performanceData, data, filters, datePeriods]);
 
     // --- Individual KPI Table ---
     const individualKPI = useMemo(() => {
@@ -1307,7 +1318,7 @@ export default function App() {
             compPrev = sorted[0]; compCurr = sorted[1];
         } else if (dv.length === 1) {
             compField = filters.dateType === 'weekly' ? 'week' : filters.dateType === 'monthly' ? 'month' : 'quarter';
-            const allPeriods = (compField === 'week' ? filterOptions.weeks : compField === 'month' ? filterOptions.months : filterOptions.quarters);
+            const allPeriods = (compField === 'week' ? datePeriods.weeks : compField === 'month' ? datePeriods.months : datePeriods.quarters);
             const idx = allPeriods.indexOf(dv[0]);
             if (idx > 0) { compPrev = allPeriods[idx - 1]; compCurr = dv[0]; }
         } else {
@@ -1373,7 +1384,7 @@ export default function App() {
 
             return { name, total: Math.round(total), onTimeRate, devImprovement, bugFixRate, bugTotal: Math.round(d.bugW), avgSprint, weightedScore, currAvg, prevAvg };
         }).sort((a, b) => b.weightedScore - a.weightedScore);
-    }, [performanceData, data, filters, filterOptions]);
+    }, [performanceData, data, filters, datePeriods]);
 
     // --- Bug Analysis ---
     const bugAnalysisData = useMemo(() => {
@@ -1776,6 +1787,7 @@ export default function App() {
                         {
                             title: t.period,
                             type: 'toggle',
+                            key: 'dateType',
                             options: [
                                 { key: 'weekly', label: t.weekly },
                                 { key: 'monthly', label: t.monthly },
@@ -1918,12 +1930,12 @@ export default function App() {
                     </h3>
                     <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={projectStats} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                            <ComposedChart data={projectStats} margin={CHART_MARGIN_STD}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={ct.grid} />
-                                <XAxis dataKey="project" tick={{ fontSize: 12, fill: ct.tick }} />
-                                <YAxis yAxisId="left" tick={{ fontSize: 12, fill: ct.tick }} />
-                                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12, fill: ct.tick }} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                <XAxis dataKey="project" tick={axisTick} />
+                                <YAxis yAxisId="left" tick={axisTick} />
+                                <YAxis yAxisId="right" orientation="right" tick={axisTick} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                 <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                                 <Bar yAxisId="left" dataKey="avgDevTime" name={t.chartAvgDev} fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={30} />
                                 <Line yAxisId="right" type="monotone" dataKey="avgDelay" name={t.chartAvgDelay} stroke="#ef4444" strokeWidth={3} dot={{ r: 4 }} />
@@ -1938,11 +1950,11 @@ export default function App() {
                     </h3>
                     <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={assigneeStats} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                            <BarChart data={assigneeStats} layout="vertical" margin={CHART_MARGIN_HBAR}>
                                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={ct.grid} />
-                                <XAxis type="number" tick={{ fontSize: 12, fill: ct.tick }} />
-                                <YAxis dataKey="assignee" type="category" tick={{ fontSize: 12, fill: ct.tick }} width={80} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                <XAxis type="number" tick={axisTick} />
+                                <YAxis dataKey="assignee" type="category" tick={axisTick} width={80} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                 <Legend wrapperStyle={{ fontSize: '12px' }} />
                                 <Bar dataKey="tasks" name={t.chartTasks} fill="#8b5cf6" radius={[0, 4, 4, 0]} />
                                 <Bar dataKey="avgDelay" name={t.chartAvgDelay} fill="#f59e0b" radius={[0, 4, 4, 0]} />
@@ -1963,7 +1975,7 @@ export default function App() {
                                     <Cell fill="#10b981" />
                                     <Cell fill="#ef4444" />
                                 </Pie>
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                 <Legend />
                             </PieChart>
                         </ResponsiveContainer>
@@ -1976,12 +1988,12 @@ export default function App() {
                     </h3>
                     <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={trendData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                            <ComposedChart data={trendData} margin={CHART_MARGIN_STD}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={ct.grid} />
-                                <XAxis dataKey="month" tick={{ fontSize: 12, fill: ct.tick }} />
-                                <YAxis yAxisId="left" tick={{ fontSize: 12, fill: ct.tick }} />
-                                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12, fill: ct.tick }} />
-                                <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                <XAxis dataKey="month" tick={axisTick} />
+                                <YAxis yAxisId="left" tick={axisTick} />
+                                <YAxis yAxisId="right" orientation="right" tick={axisTick} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                 <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                                 <Bar yAxisId="left" dataKey="tasks" name={t.chartCompletedTasks} fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
                                 <Line yAxisId="right" type="monotone" dataKey="avgDelay" name={t.chartAvgDelay} stroke="#f59e0b" strokeWidth={3} />
@@ -2186,9 +2198,9 @@ export default function App() {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={bugAnalysisData.priorityData}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={ct.grid} />
-                                        <XAxis dataKey="priority" tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <YAxis tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                        <XAxis dataKey="priority" tick={axisTick} />
+                                        <YAxis tick={axisTick} />
+                                        <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                         <Bar dataKey="count" name={t.bugCount} fill="#ef4444" radius={[4, 4, 0, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -2201,9 +2213,9 @@ export default function App() {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={bugAnalysisData.priorityData}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={ct.grid} />
-                                        <XAxis dataKey="priority" tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <YAxis tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                        <XAxis dataKey="priority" tick={axisTick} />
+                                        <YAxis tick={axisTick} />
+                                        <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                         <Bar dataKey="avgDev" name={t.chartAvgDev} fill="#f59e0b" radius={[4, 4, 0, 0]} />
                                         <ReferenceLine y={1} stroke="#ef4444" strokeDasharray="5 5" label={{ value: t.bugSlaLine, fill: ct.tick || '#666', fontSize: 11 }} />
                                     </BarChart>
@@ -2232,9 +2244,9 @@ export default function App() {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={bugAnalysisData.assigneeData} layout="vertical">
                                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={ct.grid} />
-                                        <XAxis type="number" tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <YAxis dataKey="assignee" type="category" tick={{ fontSize: 12, fill: ct.tick }} width={80} />
-                                        <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                        <XAxis type="number" tick={axisTick} />
+                                        <YAxis dataKey="assignee" type="category" tick={axisTick} width={80} />
+                                        <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                         <Bar dataKey="count" name={t.bugCount} fill="#f43f5e" radius={[0, 4, 4, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -2268,11 +2280,11 @@ export default function App() {
                         <h4 className={`text-sm font-semibold mb-3 ${dark ? 'text-slate-300' : 'text-slate-700'}`}>{t.devTimeTrend}</h4>
                         <div className="h-80">
                             <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={efficiencyTrendData.chartData} margin={{ top: 10, right: 30, bottom: 10, left: 0 }}>
+                                <LineChart data={efficiencyTrendData.chartData} margin={CHART_MARGIN_LINE}>
                                     <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                                    <XAxis dataKey="month" tick={{ fontSize: 12, fill: ct.tick }} />
-                                    <YAxis tick={{ fontSize: 12, fill: ct.tick }} />
-                                    <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                    <XAxis dataKey="month" tick={axisTick} />
+                                    <YAxis tick={axisTick} />
+                                    <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                     <Legend wrapperStyle={{ fontSize: '12px' }} />
                                     {efficiencyTrendData.assignees.map((a, i) => {
                                         const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'];
@@ -2350,9 +2362,9 @@ export default function App() {
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={delayRiskData.priorityData}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={ct.grid} />
-                                    <XAxis dataKey="priority" tick={{ fontSize: 12, fill: ct.tick }} />
-                                    <YAxis tick={{ fontSize: 12, fill: ct.tick }} />
-                                    <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                    <XAxis dataKey="priority" tick={axisTick} />
+                                    <YAxis tick={axisTick} />
+                                    <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                     <Legend wrapperStyle={{ fontSize: '11px' }} />
                                     <Bar dataKey="onTime" name={t.delayOnTime} stackId="a" fill="#10b981" />
                                     <Bar dataKey="d1to3" name={t.delay1to3} stackId="a" fill="#f59e0b" />
@@ -2417,8 +2429,8 @@ export default function App() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {sortedAlerts.map((item, i) => (
-                                        <tr key={i} className={`border-b ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
+                                    {sortedAlerts.map((item) => (
+                                        <tr key={`${item.sheetName}:${item.id}`} className={`border-b ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
                                             <td className={`${tdClass} font-medium`}>
                                                 <a href={`${JIRA_BASE}/${item.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{item.id}</a>
                                             </td>
@@ -2476,9 +2488,9 @@ export default function App() {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={sprintTrackingData.distribution}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={ct.grid} />
-                                        <XAxis dataKey="sprint" tick={{ fontSize: 12, fill: ct.tick }} label={{ value: t.sprintCount, position: 'insideBottom', offset: -5, fontSize: 11, fill: ct.tick || '#666' }} />
-                                        <YAxis tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                        <XAxis dataKey="sprint" tick={axisTick} label={{ value: t.sprintCount, position: 'insideBottom', offset: -5, fontSize: 11, fill: ct.tick || '#666' }} />
+                                        <YAxis tick={axisTick} />
+                                        <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                         <Bar dataKey="count" name={t.taskCount} fill="#06b6d4" radius={[4, 4, 0, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -2491,9 +2503,9 @@ export default function App() {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={sprintTrackingData.personData} layout="vertical">
                                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={ct.grid} />
-                                        <XAxis type="number" tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <YAxis dataKey="assignee" type="category" tick={{ fontSize: 12, fill: ct.tick }} width={80} />
-                                        <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                        <XAxis type="number" tick={axisTick} />
+                                        <YAxis dataKey="assignee" type="category" tick={axisTick} width={80} />
+                                        <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                         <Bar dataKey="avgSprint" name={t.avgSprintCount} fill="#0ea5e9" radius={[0, 4, 4, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -2506,9 +2518,9 @@ export default function App() {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={sprintTrackingData.projectData}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={ct.grid} />
-                                        <XAxis dataKey="project" tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <YAxis tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                        <XAxis dataKey="project" tick={axisTick} />
+                                        <YAxis tick={axisTick} />
+                                        <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                         <Bar dataKey="avgSprint" name={t.avgSprintCount} fill="#14b8a6" radius={[4, 4, 0, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -2521,10 +2533,10 @@ export default function App() {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <ComposedChart data={sprintTrackingData.sprintDelayData}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={ct.grid} />
-                                        <XAxis dataKey="sprint" tick={{ fontSize: 12, fill: ct.tick }} label={{ value: t.sprintCount, position: 'insideBottom', offset: -5, fontSize: 11, fill: ct.tick || '#666' }} />
-                                        <YAxis yAxisId="left" tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12, fill: ct.tick }} />
-                                        <Tooltip contentStyle={ct.tooltip} labelStyle={{ color: ct.tooltipLabel }} itemStyle={{ color: ct.tooltipItem }} />
+                                        <XAxis dataKey="sprint" tick={axisTick} label={{ value: t.sprintCount, position: 'insideBottom', offset: -5, fontSize: 11, fill: ct.tick || '#666' }} />
+                                        <YAxis yAxisId="left" tick={axisTick} />
+                                        <YAxis yAxisId="right" orientation="right" tick={axisTick} />
+                                        <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
                                         <Legend wrapperStyle={{ fontSize: '11px' }} />
                                         <Bar yAxisId="left" dataKey="count" name={t.taskCount} fill="#06b6d4" radius={[4, 4, 0, 0]} barSize={30} />
                                         <Line yAxisId="right" type="monotone" dataKey="avgDelay" name={t.avgDelaySprint} stroke="#ef4444" strokeWidth={3} dot={{ r: 4 }} />
@@ -2550,8 +2562,8 @@ export default function App() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {sprintTrackingData.multiSprint.map((item, i) => (
-                                            <tr key={i} className={`border-b ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
+                                        {sprintTrackingData.multiSprint.map((item) => (
+                                            <tr key={`${item.sheetName}:${item.id}`} className={`border-b ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
                                                 <td className={`${tdClass} font-medium`}>
                                                     <a href={`${JIRA_BASE}/${item.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{item.id}</a>
                                                 </td>
@@ -2647,14 +2659,14 @@ export default function App() {
                             </tr>
                         </thead>
                         <tbody>
-                            {tableData.slice(0, 50).map((item, index) => {
+                            {tableData.slice(0, 50).map((item) => {
                                 const subInfo = subtaskInfoMap[item.id];
                                 const hasSubtasks = !!subInfo;
                                 const subProgress = hasSubtasks ? Math.round((subInfo.done / subInfo.total) * 100) : null;
                                 const aggDevTime = hasSubtasks && subInfo.total ? parseFloat((subInfo.totalDevTime / subInfo.total).toFixed(1)) : item.devTime;
                                 const aggDelay = hasSubtasks && subInfo.total ? parseFloat((subInfo.totalDelay / subInfo.total).toFixed(1)) : item.delayDays;
                                 return (
-                                <tr key={index} className={`border-b transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
+                                <tr key={`${item.sheetName}:${item.id}`} className={`border-b transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
                                     <td className={`${tdClass} font-medium`}>
                                         <a href={`${JIRA_BASE}/${item.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-400 hover:underline">{item.id}</a>
                                     </td>
@@ -2747,8 +2759,8 @@ export default function App() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {excludedData.filter(d => !d.parent).slice(0, 50).map((item, index) => (
-                                    <tr key={index} className={`border-b transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
+                                {excludedData.filter(d => !d.parent).slice(0, 50).map((item) => (
+                                    <tr key={`${item.sheetName}:${item.id}`} className={`border-b transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
                                         <td className={`${tdClass} font-medium`}>
                                             <a href={`${JIRA_BASE}/${item.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-400 hover:underline">{item.id}</a>
                                         </td>
