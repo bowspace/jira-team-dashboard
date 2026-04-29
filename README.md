@@ -77,3 +77,41 @@ npx vite build && npx vercel deploy --prod ./dist --yes
 - Tailwind CSS v4
 - Recharts
 - Lucide React
+
+## Shared KPI Config (Google Sheet Tab: `KPI Config`)
+
+The app can read/write shared KPI settings from a dedicated tab named `KPI Config`.
+
+### 1) KPI Config tab format
+
+Create a sheet tab named `KPI Config` with these columns:
+
+- `A1 = key`
+- `B1 = value`
+
+Rows:
+
+- `targets.onTimeRate`
+- `targets.efficiencyImprovement`
+- `targets.bugFixRate`
+- `weights.onTimeRate`
+- `weights.efficiencyImprovement`
+- `weights.kpi3`
+- `weights.kpi4`
+- `weights.bugFixRate`
+- `thresholds.warningGap`
+- `thresholds.bugOnTimeDays`
+
+### 2) Read config
+
+No extra setup required for reading (same Google Sheet CSV access as existing dashboard data).
+
+### 3) Write config (required for shared save)
+
+Set env var `VITE_KPI_CONFIG_API_URL` to a deployed Google Apps Script web app URL that accepts POST:
+
+- body: `{ sheetId, sheetName, rows }`
+- `sheetName` should be `KPI Config`
+- `rows` is a 2D array (header + key/value rows)
+
+Without `VITE_KPI_CONFIG_API_URL`, the dashboard can still edit local config but cannot save back to Google Sheet.

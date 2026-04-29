@@ -763,7 +763,28 @@ const parseDateStr = (dateStr) => {
 };
 
 const SHEET_ID = import.meta.env.VITE_DB_LINK || '1ZeJOK6BkHtVX97CDSFcWqODJzBqVmRXx6UO0Q9QbDLk';
+const KPI_CONFIG_SHEET_NAME = 'KPI Config';
+const KPI_CONFIG_API_URL = import.meta.env.VITE_KPI_CONFIG_API_URL || '';
 const JIRA_BASE = 'https://jira2.my-group.net/browse';
+
+const DEFAULT_KPI_CONFIG = {
+    targets: { onTimeRate: 92, efficiencyImprovement: 15, bugFixRate: 95 },
+    weights: { onTimeRate: 0.30, efficiencyImprovement: 0.25, kpi3: 0.15, kpi4: 0.15, bugFixRate: 0.15 },
+    thresholds: { warningGap: 10, bugOnTimeDays: 1 },
+};
+
+const KPI_CONFIG_FIELD_MAP = [
+    ['targets.onTimeRate', ['targets', 'onTimeRate']],
+    ['targets.efficiencyImprovement', ['targets', 'efficiencyImprovement']],
+    ['targets.bugFixRate', ['targets', 'bugFixRate']],
+    ['weights.onTimeRate', ['weights', 'onTimeRate']],
+    ['weights.efficiencyImprovement', ['weights', 'efficiencyImprovement']],
+    ['weights.kpi3', ['weights', 'kpi3']],
+    ['weights.kpi4', ['weights', 'kpi4']],
+    ['weights.bugFixRate', ['weights', 'bugFixRate']],
+    ['thresholds.warningGap', ['thresholds', 'warningGap']],
+    ['thresholds.bugOnTimeDays', ['thresholds', 'bugOnTimeDays']],
+];
 
 // In-flight request cache so concurrent calls for the same sheet (e.g. StrictMode
 // remount or an auto-refresh overlapping a slow initial load) share one fetch.
@@ -817,6 +838,15 @@ const chartTheme = (dark) => ({
 });
 
 export default function App() {
+    const [kpiConfig, setKpiConfig] = useState(() => {
+        try {
+            const saved = localStorage.getItem('dashboard-kpi-config');
+            if (saved) return JSON.parse(saved);
+        } catch {}
+        return DEFAULT_KPI_CONFIG;
+    });
+    const [showKpiConfig, setShowKpiConfig] = useState(false);
+    const [kpiConfigSync, setKpiConfigSync] = useState({ status: 'idle', message: '' });
     const [lang, setLang] = useState(() => localStorage.getItem('dashboard-lang') || 'th');
     const [dark, setDark] = useState(() => localStorage.getItem('dashboard-dark') === 'true');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('dashboard-sidebar') === 'collapsed');
@@ -906,6 +936,86 @@ export default function App() {
             localStorage.setItem('dashboard-dark', String(!prev));
             return !prev;
         });
+    };
+    useEffect(() => {
+        localStorage.setItem('dashboard-kpi-config', JSON.stringify(kpiConfig));
+    }, [kpiConfig]);
+
+    const parseKpiConfigRows = (parsedRows) => {
+        if (!parsedRows || parsedRows.length <= 1) return null;
+        const next = JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG));
+        for (let i = 1; i < parsedRows.length; i++) {
+            const row = parsedRows[i];
+            const key = (row?.[0] || '').trim();
+            const raw = (row?.[1] || '').trim();
+            if (!key || raw === '') continue;
+            const mapRow = KPI_CONFIG_FIELD_MAP.find(([flatKey]) => flatKey === key);
+            if (!mapRow) continue;
+            const [, [section, field]] = mapRow;
+            const parsedValue = parseFloat(raw);
+            if (Number.isNaN(parsedValue)) continue;
+            next[section][field] = parsedValue;
+        }
+        return next;
+    };
+
+    const loadKpiConfigFromSheet = useCallback(async () => {
+        setKpiConfigSync({ status: 'loading', message: 'Loading KPI config from sheet...' });
+        try {
+            const parsed = await fetchSheet(KPI_CONFIG_SHEET_NAME);
+            const sheetConfig = parseKpiConfigRows(parsed);
+            if (!sheetConfig) {
+                setKpiConfigSync({ status: 'error', message: 'KPI Config sheet is empty or invalid. Using local/default config.' });
+                return;
+            }
+            setKpiConfig(sheetConfig);
+            setKpiConfigSync({ status: 'saved', message: 'Loaded shared KPI config from sheet.' });
+        } catch {
+            setKpiConfigSync({ status: 'error', message: 'Failed to load KPI config from sheet. Using local/default config.' });
+        }
+    }, []);
+
+    const saveKpiConfigToSheet = useCallback(async () => {
+        if (!KPI_CONFIG_API_URL) {
+            setKpiConfigSync({ status: 'error', message: 'Set VITE_KPI_CONFIG_API_URL to enable saving to Google Sheet.' });
+            return;
+        }
+        setKpiConfigSync({ status: 'loading', message: 'Saving KPI config to sheet...' });
+        try {
+            const rows = [
+                ['key', 'value'],
+                ...KPI_CONFIG_FIELD_MAP.map(([flatKey, [section, field]]) => [flatKey, String(kpiConfig?.[section]?.[field] ?? '')]),
+            ];
+            const response = await fetch(KPI_CONFIG_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sheetId: SHEET_ID,
+                    sheetName: KPI_CONFIG_SHEET_NAME,
+                    rows,
+                }),
+            });
+            if (!response.ok) throw new Error('save failed');
+            setKpiConfigSync({ status: 'saved', message: 'KPI config saved to shared sheet.' });
+        } catch {
+            setKpiConfigSync({ status: 'error', message: 'Failed to save KPI config to sheet.' });
+        }
+    }, [kpiConfig]);
+
+    useEffect(() => {
+        loadKpiConfigFromSheet();
+    }, [loadKpiConfigFromSheet]);
+
+    const updateKpiConfigNumber = (section, key, value) => {
+        const parsed = parseFloat(value);
+        if (Number.isNaN(parsed)) return;
+        setKpiConfig(prev => ({
+            ...prev,
+            [section]: {
+                ...prev[section],
+                [key]: parsed
+            }
+        }));
     };
 
     const parseTaskSheet = (parsed, sheetName, epics) => {
@@ -1251,7 +1361,11 @@ export default function App() {
         // Bug fix timeliness (weighted)
         const bugs = performanceData.filter(d => d.issueType === 'Bug');
         let bugWeight = 0, onTimeBugWeight = 0;
-        bugs.forEach(b => { const w = b.weight || 0; bugWeight += w; if (b.devTime <= 1) onTimeBugWeight += w; });
+        bugs.forEach(b => {
+            const w = b.weight || 0;
+            bugWeight += w;
+            if (b.devTime <= kpiConfig.thresholds.bugOnTimeDays) onTimeBugWeight += w;
+        });
         const bugFixRate = bugWeight ? (onTimeBugWeight / bugWeight) * 100 : 100;
 
         // Period-over-period efficiency (weighted) - depends on filter selection
@@ -1301,7 +1415,25 @@ export default function App() {
         }
 
         return { onTimeRate, bugFixRate, efficiencyImprovement, bugTotal: Math.round(bugWeight), bugOnTime: Math.round(onTimeBugWeight) };
-    }, [performanceData, data, filters, datePeriods]);
+    }, [performanceData, data, filters, datePeriods, kpiConfig.thresholds.bugOnTimeDays]);
+
+    const kpiFormulaRows = useMemo(() => ([
+        {
+            name: t.kpiBizDelivery,
+            formula: '((totalWeight - delayedWeight) / totalWeight) * 100',
+            factors: `delayedWeight: delayDays > 0, target: ${kpiConfig.targets.onTimeRate}%`,
+        },
+        {
+            name: t.kpiAiEfficiency,
+            formula: '((prevAvgDevTime - currAvgDevTime) / prevAvgDevTime) * 100',
+            factors: `period type: ${filters.dateType}, target: ${kpiConfig.targets.efficiencyImprovement}%`,
+        },
+        {
+            name: t.kpiBugFix,
+            formula: '(onTimeBugWeight / totalBugWeight) * 100',
+            factors: `on-time bug: devTime <= ${kpiConfig.thresholds.bugOnTimeDays} day(s), target: ${kpiConfig.targets.bugFixRate}%`,
+        },
+    ]), [t, filters.dateType, kpiConfig]);
 
     // --- Individual KPI Table ---
     const individualKPI = useMemo(() => {
@@ -1334,7 +1466,7 @@ export default function App() {
             const p = byPerson[item.assignee];
             p.totalW += w;
             if (item.delayDays > 0) p.delayedW += w;
-            if (item.issueType === 'Bug') { p.bugW += w; if (item.devTime <= 1) p.bugOnTimeW += w; }
+            if (item.issueType === 'Bug') { p.bugW += w; if (item.devTime <= kpiConfig.thresholds.bugOnTimeDays) p.bugOnTimeW += w; }
             p.sprintSum += (item.sprintCount || 0) * w;
             if (compCurr && compField && item[compField] === compCurr) { p.currDevSum += item.devTime * w; p.currW += w; }
         });
@@ -1374,17 +1506,22 @@ export default function App() {
             let efficiencyScore = 0;
             if (compCurr && compPrev && prevAvg !== null && prevAvg > 0 && currAvg !== null) {
                 devImprovement = ((prevAvg - currAvg) / prevAvg) * 100;
-                efficiencyScore = Math.min(devImprovement / 15, 1.0);
+                efficiencyScore = Math.min(devImprovement / Math.max(kpiConfig.targets.efficiencyImprovement, 1), 1.0);
                 if (efficiencyScore < 0) efficiencyScore = 0;
             } else {
                 efficiencyScore = 0.5;
             }
 
-            const weightedScore = (onTimeRate / 100 * 0.30) + (efficiencyScore * 0.25) + (1.0 * 0.15) + (1.0 * 0.15) + (bugFixRate / 100 * 0.15);
+            const weightedScore =
+                (onTimeRate / 100 * kpiConfig.weights.onTimeRate) +
+                (efficiencyScore * kpiConfig.weights.efficiencyImprovement) +
+                (1.0 * kpiConfig.weights.kpi3) +
+                (1.0 * kpiConfig.weights.kpi4) +
+                (bugFixRate / 100 * kpiConfig.weights.bugFixRate);
 
             return { name, total: Math.round(total), onTimeRate, devImprovement, bugFixRate, bugTotal: Math.round(d.bugW), avgSprint, weightedScore, currAvg, prevAvg };
         }).sort((a, b) => b.weightedScore - a.weightedScore);
-    }, [performanceData, data, filters, datePeriods]);
+    }, [performanceData, data, filters, datePeriods, kpiConfig]);
 
     // --- Bug Analysis ---
     const bugAnalysisData = useMemo(() => {
@@ -2015,32 +2152,59 @@ export default function App() {
                         '---',
                         '## Business Delivery (30%)',
                         '`On-Time Rate = ((total - delayed) / total) * 100`',
-                        'Target: >= 92%',
+                        `Target: >= ${kpiConfig.targets.onTimeRate}%`,
                         '---',
                         '## AI Tool Efficiency (25%)',
                         '`Improvement = ((prevQ_avg - currQ_avg) / prevQ_avg) * 100`',
                         'Compares avg dev time between current and previous quarter.',
-                        'Target: >= 15%',
+                        `Target: >= ${kpiConfig.targets.efficiencyImprovement}%`,
                         '---',
                         '## Bug Fixing (15%)',
                         '`Bug Fix Rate = (onTimeBugs / totalBugs) * 100`',
-                        'On-time bug = devTime <= 1 day',
-                        'Target: >= 95%',
+                        `On-time bug = devTime <= ${kpiConfig.thresholds.bugOnTimeDays} day`,
+                        `Target: >= ${kpiConfig.targets.bugFixRate}%`,
                         '---',
                         '## Color Logic',
                         'Green: >= target',
-                        'Yellow: >= target - 10%',
-                        'Red: < target - 10%',
+                        `Yellow: >= target - ${kpiConfig.thresholds.warningGap}%`,
+                        `Red: < target - ${kpiConfig.thresholds.warningGap}%`,
                     ]} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-6">
                     {[
-                        { label: t.kpiBizDelivery, weight: '30%', target: 92, current: parseFloat(kpiMetrics.onTimeRate.toFixed(1)), unit: '%' },
-                        { label: t.kpiAiEfficiency, weight: '25%', target: 15, current: kpiMetrics.efficiencyImprovement !== null ? parseFloat(kpiMetrics.efficiencyImprovement.toFixed(1)) : null, unit: '%' },
-                        { label: t.kpiBugFix, weight: '15%', target: 95, current: parseFloat(kpiMetrics.bugFixRate.toFixed(1)), unit: '%' },
+                        {
+                            key: 'onTimeRate',
+                            label: t.kpiBizDelivery,
+                            weight: `${(kpiConfig.weights.onTimeRate * 100).toFixed(0)}%`,
+                            target: kpiConfig.targets.onTimeRate,
+                            current: parseFloat(kpiMetrics.onTimeRate.toFixed(1)),
+                            unit: '%'
+                        },
+                        {
+                            key: 'efficiencyImprovement',
+                            label: t.kpiAiEfficiency,
+                            weight: `${(kpiConfig.weights.efficiencyImprovement * 100).toFixed(0)}%`,
+                            target: kpiConfig.targets.efficiencyImprovement,
+                            current: kpiMetrics.efficiencyImprovement !== null ? parseFloat(kpiMetrics.efficiencyImprovement.toFixed(1)) : null,
+                            unit: '%'
+                        },
+                        {
+                            key: 'bugFixRate',
+                            label: t.kpiBugFix,
+                            weight: `${(kpiConfig.weights.bugFixRate * 100).toFixed(0)}%`,
+                            target: kpiConfig.targets.bugFixRate,
+                            current: parseFloat(kpiMetrics.bugFixRate.toFixed(1)),
+                            unit: '%'
+                        },
                     ].map(kpi => {
                         const isNA = kpi.current === null;
-                        const color = isNA ? 'slate' : kpi.current >= kpi.target ? 'emerald' : kpi.current >= kpi.target - 10 ? 'amber' : 'rose';
+                        const color = isNA
+                            ? 'slate'
+                            : kpi.current >= kpi.target
+                                ? 'emerald'
+                                : kpi.current >= kpi.target - kpiConfig.thresholds.warningGap
+                                    ? 'amber'
+                                    : 'rose';
                         return (
                             <div key={kpi.label} className={`rounded-lg border-2 p-4 ${
                                 color === 'emerald' ? 'border-emerald-500/40 bg-emerald-500/5' :
@@ -2063,6 +2227,97 @@ export default function App() {
                             </div>
                         );
                     })}
+                </div>
+                <div className={`px-6 pb-6 ${dark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-semibold">KPI Summary Table</h4>
+                        <button
+                            onClick={() => setShowKpiConfig(prev => !prev)}
+                            className={`text-xs px-2.5 py-1.5 rounded-md border transition-colors ${
+                                dark ? 'bg-slate-700 border-slate-600 hover:bg-slate-600' : 'bg-white border-slate-300 hover:bg-slate-50'
+                            }`}
+                        >
+                            {showKpiConfig ? 'Hide KPI Config' : 'Configure KPI Factors'}
+                        </button>
+                    </div>
+                    <div className="overflow-x-auto mb-4">
+                        <table className="w-full text-xs text-left">
+                            <thead className={dark ? 'text-slate-400' : 'text-slate-600'}>
+                                <tr>
+                                    <th className="py-2 pr-3">KPI</th>
+                                    <th className="py-2 pr-3">Formula</th>
+                                    <th className="py-2 pr-3">Factors / Targets</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {kpiFormulaRows.map((row) => (
+                                    <tr key={row.name} className={`border-t ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
+                                        <td className="py-2 pr-3 font-medium">{row.name}</td>
+                                        <td className="py-2 pr-3 font-mono">{row.formula}</td>
+                                        <td className="py-2 pr-3">{row.factors}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {showKpiConfig && (
+                        <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 rounded-lg border p-4 ${dark ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50/70'}`}>
+                            <div className="md:col-span-3 flex flex-wrap items-center justify-between gap-2 mb-1">
+                                <div className={`text-xs ${
+                                    kpiConfigSync.status === 'error' ? 'text-rose-500' : kpiConfigSync.status === 'saved' ? 'text-emerald-500' : dark ? 'text-slate-400' : 'text-slate-600'
+                                }`}>
+                                    {kpiConfigSync.message || `Shared tab: ${KPI_CONFIG_SHEET_NAME}`}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={loadKpiConfigFromSheet}
+                                        className={`text-xs px-2.5 py-1.5 rounded-md border transition-colors ${dark ? 'bg-slate-700 border-slate-600 hover:bg-slate-600' : 'bg-white border-slate-300 hover:bg-slate-50'}`}
+                                    >
+                                        Reload from Sheet
+                                    </button>
+                                    <button
+                                        onClick={saveKpiConfigToSheet}
+                                        className="text-xs px-2.5 py-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors"
+                                    >
+                                        Save to KPI Config Sheet
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <p className="text-xs font-semibold">Targets (%)</p>
+                                <label className="block text-xs">On-Time Rate
+                                    <input type="number" className="w-full mt-1 px-2 py-1 rounded border bg-transparent" value={kpiConfig.targets.onTimeRate} onChange={(e) => updateKpiConfigNumber('targets', 'onTimeRate', e.target.value)} />
+                                </label>
+                                <label className="block text-xs">Efficiency Improvement
+                                    <input type="number" className="w-full mt-1 px-2 py-1 rounded border bg-transparent" value={kpiConfig.targets.efficiencyImprovement} onChange={(e) => updateKpiConfigNumber('targets', 'efficiencyImprovement', e.target.value)} />
+                                </label>
+                                <label className="block text-xs">Bug Fix Rate
+                                    <input type="number" className="w-full mt-1 px-2 py-1 rounded border bg-transparent" value={kpiConfig.targets.bugFixRate} onChange={(e) => updateKpiConfigNumber('targets', 'bugFixRate', e.target.value)} />
+                                </label>
+                            </div>
+                            <div className="space-y-2">
+                                <p className="text-xs font-semibold">Weights (0-1)</p>
+                                <label className="block text-xs">Business Delivery
+                                    <input type="number" step="0.01" className="w-full mt-1 px-2 py-1 rounded border bg-transparent" value={kpiConfig.weights.onTimeRate} onChange={(e) => updateKpiConfigNumber('weights', 'onTimeRate', e.target.value)} />
+                                </label>
+                                <label className="block text-xs">AI Efficiency
+                                    <input type="number" step="0.01" className="w-full mt-1 px-2 py-1 rounded border bg-transparent" value={kpiConfig.weights.efficiencyImprovement} onChange={(e) => updateKpiConfigNumber('weights', 'efficiencyImprovement', e.target.value)} />
+                                </label>
+                                <label className="block text-xs">Bug Fix
+                                    <input type="number" step="0.01" className="w-full mt-1 px-2 py-1 rounded border bg-transparent" value={kpiConfig.weights.bugFixRate} onChange={(e) => updateKpiConfigNumber('weights', 'bugFixRate', e.target.value)} />
+                                </label>
+                            </div>
+                            <div className="space-y-2">
+                                <p className="text-xs font-semibold">Threshold Factors</p>
+                                <label className="block text-xs">Warning Gap (%)
+                                    <input type="number" className="w-full mt-1 px-2 py-1 rounded border bg-transparent" value={kpiConfig.thresholds.warningGap} onChange={(e) => updateKpiConfigNumber('thresholds', 'warningGap', e.target.value)} />
+                                </label>
+                                <label className="block text-xs">Bug On-Time Days
+                                    <input type="number" className="w-full mt-1 px-2 py-1 rounded border bg-transparent" value={kpiConfig.thresholds.bugOnTimeDays} onChange={(e) => updateKpiConfigNumber('thresholds', 'bugOnTimeDays', e.target.value)} />
+                                </label>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -2134,16 +2389,16 @@ export default function App() {
                                     <td className={`${tdClass} font-medium`}>{p.name}</td>
                                     <td className={`${tdClass} text-center`}>{p.total}</td>
                                     <td className={`${tdClass} text-center`}>
-                                        <span className={p.onTimeRate >= 92 ? 'text-emerald-500 font-bold' : p.onTimeRate >= 82 ? 'text-amber-500' : 'text-rose-500'}>{p.onTimeRate.toFixed(0)}%</span>
+                                        <span className={p.onTimeRate >= kpiConfig.targets.onTimeRate ? 'text-emerald-500 font-bold' : p.onTimeRate >= kpiConfig.targets.onTimeRate - kpiConfig.thresholds.warningGap ? 'text-amber-500' : 'text-rose-500'}>{p.onTimeRate.toFixed(0)}%</span>
                                     </td>
                                     <td className={`${tdClass} text-center`}>
                                         {p.devImprovement !== null ? (
-                                            <span className={p.devImprovement >= 15 ? 'text-emerald-500 font-bold' : p.devImprovement >= 5 ? 'text-amber-500' : 'text-rose-500'}>{p.devImprovement.toFixed(1)}%</span>
+                                            <span className={p.devImprovement >= kpiConfig.targets.efficiencyImprovement ? 'text-emerald-500 font-bold' : p.devImprovement >= kpiConfig.targets.efficiencyImprovement - kpiConfig.thresholds.warningGap ? 'text-amber-500' : 'text-rose-500'}>{p.devImprovement.toFixed(1)}%</span>
                                         ) : <span className={dark ? 'text-slate-500' : 'text-slate-400'}>{t.kpiNA}</span>}
                                     </td>
                                     <td className={`${tdClass} text-center`}>
                                         {p.bugTotal > 0 ? (
-                                            <span className={p.bugFixRate >= 95 ? 'text-emerald-500 font-bold' : p.bugFixRate >= 85 ? 'text-amber-500' : 'text-rose-500'}>{p.bugFixRate.toFixed(0)}%</span>
+                                            <span className={p.bugFixRate >= kpiConfig.targets.bugFixRate ? 'text-emerald-500 font-bold' : p.bugFixRate >= kpiConfig.targets.bugFixRate - kpiConfig.thresholds.warningGap ? 'text-amber-500' : 'text-rose-500'}>{p.bugFixRate.toFixed(0)}%</span>
                                         ) : <span className={dark ? 'text-slate-500' : 'text-slate-400'}>-</span>}
                                     </td>
                                     <td className={`${tdClass} text-center`}>{p.avgSprint.toFixed(1)}</td>
