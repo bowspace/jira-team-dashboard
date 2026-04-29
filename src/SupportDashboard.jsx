@@ -132,6 +132,22 @@ const translations = {
         rootCauseSla: 'สาเหตุ × SLA ตาม Priority',
         withinSla: 'ภายใน SLA',
         overSla: 'เกิน SLA',
+        itSla: 'IT SLA',
+        itSlaCompliance: 'IT SLA Compliance',
+        itSlaPerformance: 'IT SLA Performance',
+        itSlaByAssignee: 'IT SLA รายบุคคล',
+        itSlaResolutionDist: 'การกระจายเวลา IT SLA',
+        running: 'กำลังดำเนินการ',
+        ticketResult: 'ผลการตรวจสอบ',
+        ticketResultCol: 'ผลการตรวจสอบ',
+        ticketResultByPriority: 'ผลการตรวจสอบ × Priority',
+        ticketResultByAssignee: 'ผลการตรวจสอบ × ผู้รับผิดชอบ',
+        pass: 'Pass',
+        reject: 'Reject',
+        pending: 'Pending',
+        allTicketResults: 'ผลตรวจสอบทั้งหมด',
+        startTime: 'เริ่ม',
+        endTime: 'IT เสร็จ',
     },
     en: {
         title: 'Platform Support Dashboard',
@@ -188,6 +204,22 @@ const translations = {
         rootCauseSla: 'Root Cause × SLA by Priority',
         withinSla: 'Within SLA',
         overSla: 'Over SLA',
+        itSla: 'IT SLA',
+        itSlaCompliance: 'IT SLA Compliance',
+        itSlaPerformance: 'IT SLA Performance',
+        itSlaByAssignee: 'IT SLA by Assignee',
+        itSlaResolutionDist: 'IT SLA Time Distribution',
+        running: 'Running',
+        ticketResult: 'Ticket-Result',
+        ticketResultCol: 'Ticket-Result',
+        ticketResultByPriority: 'Ticket-Result × Priority',
+        ticketResultByAssignee: 'Ticket-Result × Assignee',
+        pass: 'Pass',
+        reject: 'Reject',
+        pending: 'Pending',
+        allTicketResults: 'All Ticket-Results',
+        startTime: 'Start Time',
+        endTime: 'IT End Time',
     },
     zh: {
         title: 'Platform Support Dashboard',
@@ -244,6 +276,22 @@ const translations = {
         rootCauseSla: '根本原因 × SLA按优先级',
         withinSla: 'SLA内',
         overSla: '超出SLA',
+        itSla: 'IT SLA',
+        itSlaCompliance: 'IT SLA 合规率',
+        itSlaPerformance: 'IT SLA 表现',
+        itSlaByAssignee: 'IT SLA 个人表现',
+        itSlaResolutionDist: 'IT SLA 时间分布',
+        running: '进行中',
+        ticketResult: '检查结果',
+        ticketResultCol: '检查结果',
+        ticketResultByPriority: '检查结果 × 优先级',
+        ticketResultByAssignee: '检查结果 × 负责人',
+        pass: 'Pass',
+        reject: 'Reject',
+        pending: 'Pending',
+        allTicketResults: '所有检查结果',
+        startTime: '开始时间',
+        endTime: 'IT 完成时间',
     },
 };
 
@@ -407,6 +455,56 @@ const getSlaTier = (hours) => {
     return SLA_TIERS[SLA_TIERS.length - 1];
 };
 
+// --- Ticket-Result constants & normalizer ---
+const TICKET_RESULT_PASS = 'Pass';
+const TICKET_RESULT_REJECT = 'Reject';
+const TICKET_RESULT_PENDING = 'Pending';
+const TICKET_RESULT_VALUES = [TICKET_RESULT_PASS, TICKET_RESULT_REJECT, TICKET_RESULT_PENDING];
+const TICKET_RESULT_COLORS = {
+    [TICKET_RESULT_PASS]: '#10b981',
+    [TICKET_RESULT_REJECT]: '#ef4444',
+    [TICKET_RESULT_PENDING]: '#94a3b8',
+};
+const normalizeTicketResult = (raw) => {
+    if (!raw) return TICKET_RESULT_PENDING;
+    const trimmed = String(raw).trim();
+    if (!trimmed) return TICKET_RESULT_PENDING;
+    const lower = trimmed.toLowerCase();
+    if (lower === 'pass') return TICKET_RESULT_PASS;
+    if (lower === 'reject' || lower === 'rejected') return TICKET_RESULT_REJECT;
+    return TICKET_RESULT_PENDING;
+};
+
+// --- Date-time parser for Start Time / End Time (YYYY-MM-DD HH:MM:SS or DD/MM/YY HH:MM) ---
+const parseDateTime = (str) => {
+    if (!str || typeof str !== 'string') return null;
+    const trimmed = str.trim();
+    if (!trimmed) return null;
+    if (trimmed.includes('-')) {
+        const ms = Date.parse(trimmed.replace(' ', 'T'));
+        return Number.isNaN(ms) ? null : ms;
+    }
+    const parts = trimmed.split(' ');
+    const dateParts = parts[0].split('/');
+    if (dateParts.length === 3) {
+        const day = parseInt(dateParts[0], 10);
+        const month = parseInt(dateParts[1], 10) - 1;
+        let year = parseInt(dateParts[2], 10);
+        if (year < 100) year += 2000;
+        let hours = 0, minutes = 0, seconds = 0;
+        if (parts[1]) {
+            const tParts = parts[1].split(':');
+            hours = parseInt(tParts[0], 10) || 0;
+            minutes = parseInt(tParts[1], 10) || 0;
+            seconds = parseInt(tParts[2], 10) || 0;
+        }
+        const d = new Date(year, month, day, hours, minutes, seconds);
+        return d.getTime();
+    }
+    const ms = Date.parse(trimmed);
+    return Number.isNaN(ms) ? null : ms;
+};
+
 // --- Normalize Chinese status values to English ---
 const STATUS_MAP = {
     '审批中': 'Running',
@@ -435,7 +533,9 @@ const statusColors = {
 
 // --- Fallback data ---
 const fallbackData = [
-    { requestNo: 'DEMO-001', type: 'Bug', priority: 'P0 เคสด่วน', evaluatedPriority: 'P0 เร่งด่วน', platform: 'Web', title: 'Demo ticket', assignee: 'Demo User', estimatedFixTime: '', cause: '', created: '2025-10-01', completed: '2025-10-01', status: 'Completed', duration: '02:30:00', creator: 'Demo', department: 'IT', quarter: 'Q4-2025' },
+    { requestNo: 'DEMO-001', type: 'Bug', priority: 'P0 เคสด่วน', evaluatedPriority: 'P0 เร่งด่วน', platform: 'Web', title: 'Demo ticket', assignee: 'Demo User', estimatedFixTime: '', cause: '', created: '2025-10-01', completed: '2025-10-01', status: 'Completed', durationStr: '02:30:00', durationHours: 2.5, creator: 'Demo', department: 'IT', quarter: 'Q4-2025', startTime: '2025-10-01 09:00:00', endTime: '2025-10-01 11:00:00', startMs: new Date(2025, 9, 1, 9, 0, 0).getTime(), endMs: new Date(2025, 9, 1, 11, 0, 0).getTime(), ticketResult: 'Pass' },
+    { requestNo: 'DEMO-002', type: 'Bug', priority: 'P1 เคสปกติ', evaluatedPriority: 'P1 ปกติ', platform: 'Mobile', title: 'Demo rejected ticket', assignee: 'Demo User 2', estimatedFixTime: '', cause: '', created: '2025-10-02', completed: '2025-10-03', status: 'Completed', durationStr: '06:00:00', durationHours: 6, creator: 'Demo', department: 'IT', quarter: 'Q4-2025', startTime: '2025-10-02 10:00:00', endTime: '2025-10-02 16:00:00', startMs: new Date(2025, 9, 2, 10, 0, 0).getTime(), endMs: new Date(2025, 9, 2, 16, 0, 0).getTime(), ticketResult: 'Reject' },
+    { requestNo: 'DEMO-003', type: 'Feature', priority: 'P2 ปกติ', evaluatedPriority: 'P2 ทั่วไป', platform: 'Web', title: 'Demo pending ticket', assignee: 'Demo User', estimatedFixTime: '', cause: '', created: '2025-10-03', completed: '', status: 'Running', durationStr: '', durationHours: null, creator: 'Demo', department: 'IT', quarter: 'Q4-2025', startTime: '2025-10-03 09:00:00', endTime: '', startMs: new Date(2025, 9, 3, 9, 0, 0).getTime(), endMs: null, ticketResult: 'Pending' },
 ];
 
 // --- Fetch sheet data ---
@@ -466,9 +566,23 @@ const findColIncludes = (headers, name) => {
     return idx;
 };
 
+const warnedSheets = new Set();
+const warnMissingColumns = (sheetName, headers) => {
+    if (warnedSheets.has(sheetName)) return;
+    warnedSheets.add(sheetName);
+    const missing = [];
+    if (findColIncludes(headers, 'Start Time') < 0 && findColIncludes(headers, '开始时间') < 0) missing.push('Start Time');
+    if (findColIncludes(headers, 'End Time') < 0 && findColIncludes(headers, '结束时间') < 0) missing.push('End Time');
+    if (findColIncludes(headers, 'ผลการตรวจสอบ') < 0 && findColIncludes(headers, 'Ticket-Result') < 0 && findColIncludes(headers, '检查结果') < 0) missing.push('ผลการตรวจสอบ-Result');
+    if (missing.length > 0) {
+        console.warn(`[SupportDashboard] Sheet "${sheetName}" missing columns: ${missing.join(', ')}. IT SLA / Ticket-Result data will be empty for these rows.`);
+    }
+};
+
 const parseSheetData = (parsed, quarterName) => {
     if (!parsed || parsed.length <= 1) return [];
     const headers = parsed[0].map(h => (h || '').trim());
+    warnMissingColumns(quarterName, headers);
 
     const idx = {
         requestNo: findCol(headers, 'Request No.') >= 0 ? findCol(headers, 'Request No.') : findColIncludes(headers, 'Request'),
@@ -487,6 +601,9 @@ const parseSheetData = (parsed, quarterName) => {
         duration: findColIncludes(headers, '耗时') >= 0 ? findColIncludes(headers, '耗时') : findColIncludes(headers, 'Duration'),
         creator: findColIncludes(headers, '创建人') >= 0 ? findColIncludes(headers, '创建人') : findColIncludes(headers, 'Creator'),
         department: findColIncludes(headers, '创建人部门') >= 0 ? findColIncludes(headers, '创建人部门') : findColIncludes(headers, 'Department'),
+        startTime: findColIncludes(headers, 'Start Time') >= 0 ? findColIncludes(headers, 'Start Time') : findColIncludes(headers, '开始时间'),
+        endTime: findColIncludes(headers, 'End Time') >= 0 ? findColIncludes(headers, 'End Time') : findColIncludes(headers, '结束时间'),
+        ticketResult: findColIncludes(headers, 'ผลการตรวจสอบ') >= 0 ? findColIncludes(headers, 'ผลการตรวจสอบ') : (findColIncludes(headers, 'Ticket-Result') >= 0 ? findColIncludes(headers, 'Ticket-Result') : findColIncludes(headers, '检查结果')),
     };
 
     const records = [];
@@ -501,6 +618,10 @@ const parseSheetData = (parsed, quarterName) => {
 
         const rawStatus = (r[idx.status] || '').trim();
         const approvalResult = (r[idx.approvalResult] || '').trim();
+
+        const startTimeStr = idx.startTime >= 0 ? (r[idx.startTime] || '').trim() : '';
+        const endTimeStr = idx.endTime >= 0 ? (r[idx.endTime] || '').trim() : '';
+        const ticketResultRaw = idx.ticketResult >= 0 ? (r[idx.ticketResult] || '').trim() : '';
 
         records.push({
             requestNo,
@@ -520,6 +641,11 @@ const parseSheetData = (parsed, quarterName) => {
             creator: (r[idx.creator] || '').trim(),
             department: (r[idx.department] || '').trim(),
             quarter: quarterName,
+            startTime: startTimeStr,
+            endTime: endTimeStr,
+            startMs: parseDateTime(startTimeStr),
+            endMs: parseDateTime(endTimeStr),
+            ticketResult: normalizeTicketResult(ticketResultRaw),
         });
     }
     return records;
@@ -553,6 +679,7 @@ export default function SupportDashboard({ dark, lang }) {
         assignees: [],
         statuses: [],
         causes: [],
+        ticketResults: [],
     });
 
     const [showFilterModal, setShowFilterModal] = useState(false);
@@ -626,21 +753,40 @@ export default function SupportDashboard({ dark, lang }) {
         assignees: [...new Set(data.map(d => d.assignee || UNASSIGNED))].sort(),
         statuses: [...new Set(data.map(d => d.status))].filter(Boolean).sort(),
         causes: [...new Set(data.map(d => d.cause).filter(Boolean))].sort(),
+        ticketResults: TICKET_RESULT_VALUES,
     }), [data]);
 
-    // --- Filtered data ---
+    // --- Filtered data (also enriches with IT SLA derived fields using a single now snapshot) ---
     const filtered = useMemo(() => {
-        return data.filter(d => {
-            if (filters.quarters.length && !filters.quarters.includes(d.quarter)) return false;
-            if (filters.platforms.length && !filters.platforms.includes(d.platform)) return false;
-            if (filters.types.length && !filters.types.includes(d.type)) return false;
-            if (filters.priorities.length && !filters.priorities.includes(d.priority || NO_PRIORITY)) return false;
-            if (filters.evaluatedPriorities.length && !filters.evaluatedPriorities.includes(d.evaluatedPriority || NO_PRIORITY)) return false;
-            if (filters.assignees.length && !filters.assignees.includes(d.assignee || UNASSIGNED)) return false;
-            if (filters.statuses.length && !filters.statuses.includes(d.status)) return false;
-            if (filters.causes.length && !filters.causes.includes(d.cause)) return false;
-            return true;
-        });
+        const now = Date.now();
+        return data.reduce((acc, d) => {
+            if (filters.quarters.length && !filters.quarters.includes(d.quarter)) return acc;
+            if (filters.platforms.length && !filters.platforms.includes(d.platform)) return acc;
+            if (filters.types.length && !filters.types.includes(d.type)) return acc;
+            if (filters.priorities.length && !filters.priorities.includes(d.priority || NO_PRIORITY)) return acc;
+            if (filters.evaluatedPriorities.length && !filters.evaluatedPriorities.includes(d.evaluatedPriority || NO_PRIORITY)) return acc;
+            if (filters.assignees.length && !filters.assignees.includes(d.assignee || UNASSIGNED)) return acc;
+            if (filters.statuses.length && !filters.statuses.includes(d.status)) return acc;
+            if (filters.causes.length && !filters.causes.includes(d.cause)) return acc;
+            if (filters.ticketResults.length && !filters.ticketResults.includes(d.ticketResult || TICKET_RESULT_PENDING)) return acc;
+
+            let itDurationHours = null;
+            let itRunning = false;
+            if (d.startMs != null) {
+                if (d.endMs != null) {
+                    itDurationHours = (d.endMs - d.startMs) / 3_600_000;
+                } else {
+                    itDurationHours = (now - d.startMs) / 3_600_000;
+                    itRunning = true;
+                }
+            }
+            const itWithinSla = itDurationHours != null
+                ? itDurationHours <= getSlaThreshold(d.evaluatedPriority)
+                : null;
+
+            acc.push({ ...d, itDurationHours, itRunning, itWithinSla });
+            return acc;
+        }, []);
     }, [data, filters]);
 
     // --- KPI calculations ---
@@ -790,17 +936,108 @@ export default function SupportDashboard({ dark, lang }) {
         }).sort((a, b) => (b.withinSla + b.overSla) - (a.withinSla + a.overSla));
     }, [filtered]);
 
+    // --- IT SLA: compliance KPI (running tickets always counted) ---
+    const itSlaKpis = useMemo(() => {
+        const withItDuration = filtered.filter(d => d.itDurationHours != null);
+        const total = withItDuration.length;
+        const within = withItDuration.filter(d => d.itWithinSla === true).length;
+        const running = withItDuration.filter(d => d.itRunning).length;
+        const compliancePct = total > 0 ? (within / total * 100) : 0;
+        const avg = total > 0 ? withItDuration.reduce((s, d) => s + d.itDurationHours, 0) / total : 0;
+        return { total, within, running, compliancePct, avg };
+    }, [filtered]);
+
+    // --- IT SLA: time distribution (mirrors resolutionDistData but for itDurationHours) ---
+    const itSlaResolutionDistData = useMemo(() => {
+        const buckets = SLA_TIERS.map(tier => ({ name: tier.label, count: 0, color: tier.color }));
+        filtered.forEach(d => {
+            if (d.itDurationHours == null) return;
+            const tier = getSlaTier(d.itDurationHours);
+            if (tier) {
+                const idx = SLA_TIERS.indexOf(tier);
+                buckets[idx].count++;
+            }
+        });
+        const total = buckets.reduce((s, b) => s + b.count, 0);
+        return buckets.map(b => ({ ...b, pct: total > 0 ? Math.round(b.count / total * 1000) / 10 : 0 }));
+    }, [filtered]);
+
+    // --- IT SLA: per-assignee tier breakdown (mirrors slaByAssignee) ---
+    const itSlaByAssignee = useMemo(() => {
+        const map = {};
+        filtered.forEach(d => {
+            const key = d.assignee || UNASSIGNED;
+            if (!map[key]) map[key] = { name: key };
+            if (d.itDurationHours != null) {
+                const tier = getSlaTier(d.itDurationHours);
+                if (tier) {
+                    map[key][tier.key] = (map[key][tier.key] || 0) + 1;
+                }
+            }
+        });
+        return Object.values(map)
+            .filter(a => SLA_TIERS.reduce((s, tier) => s + (a[tier.key] || 0), 0) >= 5)
+            .sort((a, b) => {
+                const totalA = SLA_TIERS.reduce((s, tier) => s + (a[tier.key] || 0), 0);
+                const totalB = SLA_TIERS.reduce((s, tier) => s + (b[tier.key] || 0), 0);
+                return totalB - totalA;
+            });
+    }, [filtered]);
+
+    // --- Ticket-Result by Priority (P0/P1/P2/No Priority × Pass/Reject/Pending) ---
+    const ticketResultByPriorityData = useMemo(() => {
+        const buckets = ['P0', 'P1', 'P2', NO_PRIORITY].map(level => ({
+            name: level,
+            Pass: 0, Reject: 0, Pending: 0,
+        }));
+        filtered.forEach(d => {
+            const priority = d.evaluatedPriority || NO_PRIORITY;
+            const level = priority.startsWith('P0') ? 'P0' : priority.startsWith('P1') ? 'P1' : priority.startsWith('P2') ? 'P2' : NO_PRIORITY;
+            const bucket = buckets.find(b => b.name === level);
+            if (!bucket) return;
+            const result = d.ticketResult || TICKET_RESULT_PENDING;
+            if (TICKET_RESULT_VALUES.includes(result)) bucket[result]++;
+        });
+        return buckets.map(b => {
+            const total = b.Pass + b.Reject + b.Pending;
+            return {
+                ...b,
+                total,
+                PassPct: total > 0 ? Math.round(b.Pass / total * 1000) / 10 : 0,
+                RejectPct: total > 0 ? Math.round(b.Reject / total * 1000) / 10 : 0,
+                PendingPct: total > 0 ? Math.round(b.Pending / total * 1000) / 10 : 0,
+            };
+        }).filter(b => b.total > 0);
+    }, [filtered]);
+
+    // --- Ticket-Result by Assignee ---
+    const ticketResultByAssigneeData = useMemo(() => {
+        const map = {};
+        filtered.forEach(d => {
+            const key = d.assignee || UNASSIGNED;
+            if (!map[key]) map[key] = { name: key, Pass: 0, Reject: 0, Pending: 0 };
+            const result = d.ticketResult || TICKET_RESULT_PENDING;
+            if (TICKET_RESULT_VALUES.includes(result)) map[key][result]++;
+        });
+        return Object.values(map)
+            .map(a => ({ ...a, total: a.Pass + a.Reject + a.Pending }))
+            .filter(a => a.total >= 5)
+            .sort((a, b) => b.total - a.total);
+    }, [filtered]);
+
     // --- Table data ---
     const tableData = useMemo(() => {
         const getVal = (row, key) => {
             if (key === 'durationHours') return row.durationHours ?? -1;
+            if (key === 'itDurationHours') return row.itDurationHours ?? -1;
+            if (key === 'ticketResult') return row.ticketResult || '';
             return row[key] || '';
         };
         return sortData(filtered, tableSort, getVal).slice(0, 50);
     }, [filtered, tableSort]);
 
     // --- Clear filters ---
-    const clearFilters = () => setFilters({ quarters: [], platforms: [], types: [], priorities: [], evaluatedPriorities: [], assignees: [], statuses: [], causes: [] });
+    const clearFilters = () => setFilters({ quarters: [], platforms: [], types: [], priorities: [], evaluatedPriorities: [], assignees: [], statuses: [], causes: [], ticketResults: [] });
     const hasFilters = Object.values(filters).some(f => f.length > 0);
 
     // --- Styles ---
@@ -892,6 +1129,7 @@ export default function SupportDashboard({ dark, lang }) {
                 <MultiSelect options={filterOptions.assignees} selected={filters.assignees} onChange={v => setFilters(f => ({ ...f, assignees: v }))} label={t.allAssignees} dark={dark} />
                 <MultiSelect options={filterOptions.statuses} selected={filters.statuses} onChange={v => setFilters(f => ({ ...f, statuses: v }))} label={t.allStatuses} dark={dark} />
                 {filterOptions.causes.length > 0 && <MultiSelect options={filterOptions.causes} selected={filters.causes} onChange={v => setFilters(f => ({ ...f, causes: v }))} label={t.allCauses} dark={dark} />}
+                <MultiSelect options={filterOptions.ticketResults} selected={filters.ticketResults} onChange={v => setFilters(f => ({ ...f, ticketResults: v }))} label={t.allTicketResults} dark={dark} />
                 {hasFilters && (
                     <button onClick={clearFilters} className="text-sm text-blue-500 hover:text-blue-400 flex items-center gap-1">
                         <X size={14} /> {t.clear}
@@ -912,6 +1150,7 @@ export default function SupportDashboard({ dark, lang }) {
                     { title: t.allAssignees, key: 'assignees', options: filterOptions.assignees, selected: filters.assignees },
                     { title: t.allStatuses, key: 'statuses', options: filterOptions.statuses, selected: filters.statuses },
                     ...(filterOptions.causes.length > 0 ? [{ title: t.allCauses, key: 'causes', options: filterOptions.causes, selected: filters.causes }] : []),
+                    { title: t.allTicketResults, key: 'ticketResults', options: filterOptions.ticketResults, selected: filters.ticketResults },
                 ];
                 return <MobileFilterSheet dark={dark} onClose={() => setShowFilterModal(false)} onClear={clearFilters} hasFilters={hasFilters} totalActive={totalActive} sections={filterSections} setFilters={setFilters} t={t} />;
             })()}
@@ -1124,6 +1363,115 @@ export default function SupportDashboard({ dark, lang }) {
                 ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
             </div>
 
+            {/* ===== IT SLA & Ticket-Result Section (issue #11) ===== */}
+            <div className={`pt-2 ${dark ? 'border-t border-slate-700' : 'border-t border-slate-200'}`}>
+                <h2 className={`text-xl font-bold mb-1 ${dark ? 'text-white' : 'text-slate-900'}`}>{t.itSla} & {t.ticketResult}</h2>
+                <p className={`text-sm mb-4 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {t.startTime} → {t.endTime} · P0≤{SLA_THRESHOLDS.P0}h · P1≤{SLA_THRESHOLDS.P1}h · P2≤{SLA_THRESHOLDS.P2/24}d
+                </p>
+            </div>
+
+            {/* IT SLA KPI + Time Distribution */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className={`${card} border-l-amber-500 lg:col-span-1`}>
+                    <div className="flex items-center justify-between mb-2">
+                        <span className={`text-sm font-medium ${dark ? 'text-slate-400' : 'text-slate-600'}`}>{t.itSlaCompliance}</span>
+                        <Shield className="text-amber-500" size={24} />
+                    </div>
+                    <div className={`text-3xl font-bold ${dark ? 'text-white' : 'text-slate-900'}`}>{itSlaKpis.compliancePct.toFixed(1)}%</div>
+                    <div className={`text-sm mt-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {itSlaKpis.within} / {itSlaKpis.total} · avg {itSlaKpis.avg.toFixed(1)} {t.hours}
+                    </div>
+                    {itSlaKpis.running > 0 && (
+                        <div className={`text-xs mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full ${dark ? 'bg-blue-900/40 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                            {itSlaKpis.running} {t.running}
+                        </div>
+                    )}
+                </div>
+                <div className={`${panel} p-6 lg:col-span-2`}>
+                    <h3 className={`text-lg font-semibold mb-4 ${dark ? 'text-white' : 'text-slate-900'}`}>{t.itSlaResolutionDist}</h3>
+                    {itSlaResolutionDistData.some(d => d.count > 0) ? (
+                        <ResponsiveContainer width="100%" height={260}>
+                            <BarChart data={itSlaResolutionDistData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                                <XAxis dataKey="name" tick={axisTick} />
+                                <YAxis tick={axisTick} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => [`${value} (${props.payload.pct}%)`, t.count]} />
+                                <Bar dataKey="count" name={t.count} radius={[4, 4, 0, 0]} label={({ x, y, width, value, index }) => value > 0 ? <text x={x + width / 2} y={y - 6} textAnchor="middle" fill={ct.tick || '#64748b'} fontSize={11}>{value} ({itSlaResolutionDistData[index]?.pct}%)</text> : null}>
+                                    {itSlaResolutionDistData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
+                </div>
+            </div>
+
+            {/* IT SLA by Assignee */}
+            <div className={`${panel} p-6`}>
+                <h3 className={`text-lg font-semibold mb-4 ${dark ? 'text-white' : 'text-slate-900'}`}>{t.itSlaByAssignee}</h3>
+                <div className="flex flex-wrap gap-3 mb-4">
+                    {SLA_TIERS.map(tier => (
+                        <div key={tier.key} className="flex items-center gap-1.5 text-sm">
+                            <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: tier.color }}></span>
+                            <span className={dark ? 'text-slate-300' : 'text-slate-600'}>{tier.label}</span>
+                        </div>
+                    ))}
+                </div>
+                {itSlaByAssignee.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={Math.max(300, itSlaByAssignee.length * 40)}>
+                        <BarChart data={itSlaByAssignee} layout="vertical">
+                            <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                            <XAxis type="number" tick={axisTick} />
+                            <YAxis dataKey="name" type="category" width={120} tick={axisTick12} />
+                            <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => { const total = SLA_TIERS.reduce((s, tier) => s + (props.payload[tier.key] || 0), 0); const pct = total > 0 ? Math.round(value / total * 1000) / 10 : 0; return [`${value} (${pct}%)`, name]; }} />
+                            <Legend />
+                            {SLA_TIERS.map(tier => (
+                                <Bar key={tier.key} dataKey={tier.key} name={tier.label} stackId="itsla" fill={tier.color} />
+                            ))}
+                        </BarChart>
+                    </ResponsiveContainer>
+                ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
+            </div>
+
+            {/* Ticket-Result charts row */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className={`${panel} p-6`}>
+                    <h3 className={`text-lg font-semibold mb-4 ${dark ? 'text-white' : 'text-slate-900'}`}>{t.ticketResultByPriority}</h3>
+                    {ticketResultByPriorityData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={ticketResultByPriorityData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                                <XAxis dataKey="name" tick={axisTick} />
+                                <YAxis tick={axisTick} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(value, name, props) => { const pctKey = `${name}Pct`; return [`${value} (${props.payload[pctKey]}%)`, name]; }} />
+                                <Legend />
+                                <Bar dataKey="Pass" name={t.pass} stackId="result" fill={TICKET_RESULT_COLORS.Pass} />
+                                <Bar dataKey="Reject" name={t.reject} stackId="result" fill={TICKET_RESULT_COLORS.Reject} />
+                                <Bar dataKey="Pending" name={t.pending} stackId="result" fill={TICKET_RESULT_COLORS.Pending} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
+                </div>
+                <div className={`${panel} p-6`}>
+                    <h3 className={`text-lg font-semibold mb-4 ${dark ? 'text-white' : 'text-slate-900'}`}>{t.ticketResultByAssignee}</h3>
+                    {ticketResultByAssigneeData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={Math.max(300, ticketResultByAssigneeData.length * 36)}>
+                            <BarChart data={ticketResultByAssigneeData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                                <XAxis dataKey="name" tick={axisTick11} angle={-30} textAnchor="end" height={70} />
+                                <YAxis tick={axisTick} />
+                                <Tooltip contentStyle={ct.tooltip} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
+                                <Legend />
+                                <Bar dataKey="Pass" name={t.pass} fill={TICKET_RESULT_COLORS.Pass} radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="Reject" name={t.reject} fill={TICKET_RESULT_COLORS.Reject} radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="Pending" name={t.pending} fill={TICKET_RESULT_COLORS.Pending} radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : <p className="text-center py-12 text-slate-400">{t.noData}</p>}
+                </div>
+            </div>
+
             {/* Ticket Details Table */}
             <div className={`${panel} p-6`}>
                 <h3 className={`text-lg font-semibold mb-4 ${dark ? 'text-white' : 'text-slate-900'}`}>
@@ -1145,6 +1493,8 @@ export default function SupportDashboard({ dark, lang }) {
                                 <SortHeader label={t.estimatedFixTime} sortKey="estimatedFixTime" />
                                 <SortHeader label={t.status} sortKey="status" />
                                 <SortHeader label={t.duration} sortKey="durationHours" />
+                                <SortHeader label={t.itSla} sortKey="itDurationHours" />
+                                <SortHeader label={t.ticketResultCol} sortKey="ticketResult" />
                                 <SortHeader label={t.created} sortKey="created" />
                                 <SortHeader label={t.completed} sortKey="completed" />
                             </tr>
@@ -1167,6 +1517,28 @@ export default function SupportDashboard({ dark, lang }) {
                                             </span>
                                         </td>
                                         <td className={`${tdClass} font-mono text-xs`}>{formatDuration(row.durationHours)}</td>
+                                        <td className={`${tdClass} font-mono text-xs`}>
+                                            {row.itDurationHours == null ? '-' : (
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    {formatDuration(row.itDurationHours)}
+                                                    {row.itRunning && (
+                                                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${dark ? 'bg-blue-900/40 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>{t.running}</span>
+                                                    )}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className={`${tdClass} text-xs`}>
+                                            {(() => {
+                                                const r = row.ticketResult || TICKET_RESULT_PENDING;
+                                                const cls = r === TICKET_RESULT_PASS
+                                                    ? (dark ? 'bg-emerald-900/40 text-emerald-400' : 'bg-emerald-100 text-emerald-700')
+                                                    : r === TICKET_RESULT_REJECT
+                                                        ? (dark ? 'bg-red-900/40 text-red-400' : 'bg-red-100 text-red-700')
+                                                        : (dark ? 'bg-slate-700/40 text-slate-400' : 'bg-slate-100 text-slate-600');
+                                                const label = r === TICKET_RESULT_PASS ? t.pass : r === TICKET_RESULT_REJECT ? t.reject : t.pending;
+                                                return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>;
+                                            })()}
+                                        </td>
                                         <td className={`${tdClass} text-xs`}>{row.created}</td>
                                         <td className={`${tdClass} text-xs`}>{row.completed}</td>
                                     </tr>
@@ -1174,7 +1546,7 @@ export default function SupportDashboard({ dark, lang }) {
                             })}
                             {tableData.length === 0 && (
                                 <tr>
-                                    <td colSpan={11} className={`${tdClass} text-center py-8`}>{t.noData}</td>
+                                    <td colSpan={13} className={`${tdClass} text-center py-8`}>{t.noData}</td>
                                 </tr>
                             )}
                         </tbody>
