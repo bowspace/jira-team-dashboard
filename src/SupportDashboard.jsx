@@ -469,9 +469,8 @@ const normalizeTicketResult = (raw) => {
     if (!raw) return TICKET_RESULT_PENDING;
     const trimmed = String(raw).trim();
     if (!trimmed) return TICKET_RESULT_PENDING;
-    const lower = trimmed.toLowerCase();
-    if (lower === 'pass') return TICKET_RESULT_PASS;
-    if (lower === 'reject' || lower === 'rejected') return TICKET_RESULT_REJECT;
+    if (trimmed === TICKET_RESULT_PASS) return TICKET_RESULT_PASS;
+    if (trimmed === TICKET_RESULT_REJECT) return TICKET_RESULT_REJECT;
     return TICKET_RESULT_PENDING;
 };
 
@@ -571,9 +570,9 @@ const warnMissingColumns = (sheetName, headers) => {
     if (warnedSheets.has(sheetName)) return;
     warnedSheets.add(sheetName);
     const missing = [];
-    if (findColIncludes(headers, 'Start Time') < 0 && findColIncludes(headers, '开始时间') < 0) missing.push('Start Time');
-    if (findColIncludes(headers, 'End Time') < 0 && findColIncludes(headers, '结束时间') < 0) missing.push('End Time');
-    if (findColIncludes(headers, 'ผลการตรวจสอบ') < 0 && findColIncludes(headers, 'Ticket-Result') < 0 && findColIncludes(headers, '检查结果') < 0) missing.push('ผลการตรวจสอบ-Result');
+    if (findCol(headers, 'Start Time') < 0) missing.push('Start Time');
+    if (findCol(headers, 'End Time') < 0) missing.push('End Time');
+    if (findCol(headers, 'ผลการตรวจสอบ-Result') < 0) missing.push('ผลการตรวจสอบ-Result');
     if (missing.length > 0) {
         console.warn(`[SupportDashboard] Sheet "${sheetName}" missing columns: ${missing.join(', ')}. IT SLA / Ticket-Result data will be empty for these rows.`);
     }
@@ -601,9 +600,9 @@ const parseSheetData = (parsed, quarterName) => {
         duration: findColIncludes(headers, '耗时') >= 0 ? findColIncludes(headers, '耗时') : findColIncludes(headers, 'Duration'),
         creator: findColIncludes(headers, '创建人') >= 0 ? findColIncludes(headers, '创建人') : findColIncludes(headers, 'Creator'),
         department: findColIncludes(headers, '创建人部门') >= 0 ? findColIncludes(headers, '创建人部门') : findColIncludes(headers, 'Department'),
-        startTime: findColIncludes(headers, 'Start Time') >= 0 ? findColIncludes(headers, 'Start Time') : findColIncludes(headers, '开始时间'),
-        endTime: findColIncludes(headers, 'End Time') >= 0 ? findColIncludes(headers, 'End Time') : findColIncludes(headers, '结束时间'),
-        ticketResult: findColIncludes(headers, 'ผลการตรวจสอบ') >= 0 ? findColIncludes(headers, 'ผลการตรวจสอบ') : (findColIncludes(headers, 'Ticket-Result') >= 0 ? findColIncludes(headers, 'Ticket-Result') : findColIncludes(headers, '检查结果')),
+        startTime: findCol(headers, 'Start Time'),
+        endTime: findCol(headers, 'End Time'),
+        ticketResult: findCol(headers, 'ผลการตรวจสอบ-Result'),
     };
 
     const records = [];
