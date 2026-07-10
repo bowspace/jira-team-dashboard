@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, useDraggable, useDroppable } from '@dnd-kit/core';
 import {
     Calendar, CalendarDays, CalendarRange, Rocket, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Home, Folder,
     CircleCheck, AlertTriangle, OctagonAlert, Check, MapPin, Pencil, Trash2, Plus, X, Lock, Unlock, Route, Settings,
+    GripVertical, Copy,
 } from 'lucide-react';
 import {
     ROADMAP_SHEET_ID, ROADMAP_GID, ROADMAP_SCRIPT_URL, ROADMAP_REFRESH_MS, ROADMAP_TOKEN_KEY,
@@ -142,9 +144,15 @@ function ProjectMultiSelect({ dark, data, selected, onChange }) {
     );
 }
 
-function CardTools({ dark, disabled, onEdit, onDelete }) {
+function CardTools({ dark, disabled, onEdit, onDelete, onDuplicate }) {
     return (
         <span className="inline-flex gap-1 ml-auto">
+            {onDuplicate && (
+                <button
+                    onClick={onDuplicate} disabled={disabled} title="ทำสำเนา"
+                    className={`w-6 h-6 rounded-md border inline-flex items-center justify-center shrink-0 disabled:opacity-30 disabled:cursor-not-allowed ${dark ? 'border-slate-600 bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
+                ><Copy size={12} /></button>
+            )}
             <button
                 onClick={onEdit} disabled={disabled} title="แก้ไข"
                 className={`w-6 h-6 rounded-md border inline-flex items-center justify-center shrink-0 disabled:opacity-30 disabled:cursor-not-allowed ${dark ? 'border-slate-600 bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
@@ -158,15 +166,24 @@ function CardTools({ dark, disabled, onEdit, onDelete }) {
 }
 
 /* ================= WEEKLY ================= */
-function WeeklyCard({ dark, r, showProject, data, editMode, onEdit, onDelete, extra }) {
+function WeeklyCard({ dark, r, showProject, data, editMode, onEdit, onDelete, onDuplicate, extra }) {
     const s = toDate(r.start), e = toDate(r.end), p = toDate(r.prod_date);
     const range = r.date_label ? labelOf(r) : (s ? (e ? `${fmtD(s)} – ${fmtD(e)}` : fmtD(s)) : '');
     const feats = (r.items || '').split('|').map(x => x.trim()).filter(Boolean);
     const shown = feats.slice(0, 4);
     const accent = statusAccent(dark, r.status);
+    const draggable = editMode && !!r.id;
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: r.id || `nodrag-${r.project}-${r.code}-${r.title}`, disabled: !draggable });
+    const dragStyle = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: isDragging ? 60 : undefined } : undefined;
     return (
-        <div className={`rounded-lg border border-l-4 p-2.5 ${accent.borderL} ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div ref={setNodeRef} style={dragStyle} className={`group relative rounded-lg border border-l-4 p-2.5 ${accent.borderL} ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'} ${isDragging ? 'opacity-60 shadow-lg' : ''}`}>
             <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                {draggable && (
+                    <span
+                        {...attributes} {...listeners} title="ลากเพื่อย้าย column"
+                        className={`shrink-0 cursor-grab active:cursor-grabbing touch-none rounded p-0.5 transition-opacity pointer-coarse:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 ${dark ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'}`}
+                    ><GripVertical size={14} /></span>
+                )}
                 {showProject && <ProjectChip dark={dark} label={projName(data, r.project)} colorIdx={projectColorIndex(data, r.project)} />}
                 <span className={`text-[9.5px] font-bold text-white px-1.5 py-0.5 rounded whitespace-nowrap ${accent.chip}`}>{r.code || '•'}</span>
                 {range && (
@@ -174,7 +191,7 @@ function WeeklyCard({ dark, r, showProject, data, editMode, onEdit, onDelete, ex
                         <CalendarRange size={11} /> {range}
                     </span>
                 )}
-                {editMode && <CardTools dark={dark} disabled={!r.id} onEdit={() => onEdit(r)} onDelete={() => onDelete(r)} />}
+                {editMode && <CardTools dark={dark} disabled={!r.id} onEdit={() => onEdit(r)} onDelete={() => onDelete(r)} onDuplicate={() => onDuplicate(r)} />}
             </div>
             <div className={`text-[12.5px] font-bold leading-tight mb-1 ${dark ? 'text-slate-100' : 'text-slate-800'}`}>{r.title}</div>
             <div className="flex gap-1 flex-wrap my-1">
@@ -200,9 +217,13 @@ function WeeklyCard({ dark, r, showProject, data, editMode, onEdit, onDelete, ex
     );
 }
 
-function KanbanColumn({ dark, title, count, dotClass, children }) {
+function KanbanColumn({ dark, id, droppable, title, count, dotClass, children }) {
+    const { setNodeRef, isOver } = useDroppable({ id, disabled: !droppable });
     return (
-        <div className={`rounded-xl border shadow-sm overflow-hidden ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div
+            ref={droppable ? setNodeRef : undefined}
+            className={`rounded-xl border shadow-sm overflow-hidden transition-colors ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'} ${isOver ? (dark ? 'ring-2 ring-blue-500/60' : 'ring-2 ring-blue-400/70') : ''}`}
+        >
             <div className={`flex items-center gap-2 px-3.5 py-2.5 border-b font-extrabold text-[13px] ${dark ? 'border-slate-700 bg-slate-800/60 text-slate-100' : 'border-slate-200 bg-slate-50 text-slate-800'}`}>
                 <span className={`w-2.5 h-2.5 rounded-full ${dotClass}`} />
                 {title}
@@ -217,7 +238,7 @@ function KanbanColumn({ dark, title, count, dotClass, children }) {
     );
 }
 
-function WeeklyView({ dark, data, projects, editMode, weekOffset, setWeekOffset, onEdit, onDelete }) {
+function WeeklyView({ dark, data, projects, editMode, weekOffset, setWeekOffset, onEdit, onDelete, onDuplicate, onDropCard }) {
     const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
     const ws = useMemo(() => { const w = startOfWeek(today); w.setDate(w.getDate() + weekOffset * 7); return w; }, [today, weekOffset]);
     const we = useMemo(() => { const w = new Date(ws); w.setDate(w.getDate() + 6); w.setHours(23, 59, 59, 0); return w; }, [ws]);
@@ -236,38 +257,69 @@ function WeeklyView({ dark, data, projects, editMode, weekOffset, setWeekOffset,
     }, [rows, ws, we]);
 
     const showProject = projects.length !== 1;
-    const card = (r) => <WeeklyCard key={r.id || `${r.project}-${r.code}-${r.title}`} dark={dark} r={r} showProject={showProject} data={data} editMode={editMode} onEdit={() => onEdit('timeline', r)} onDelete={() => onDelete(r)} />;
+    const card = (r) => <WeeklyCard key={r.id || `${r.project}-${r.code}-${r.title}`} dark={dark} r={r} showProject={showProject} data={data} editMode={editMode} onEdit={() => onEdit('timeline', r)} onDelete={() => onDelete(r)} onDuplicate={() => onDuplicate(r)} />;
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } }),
+    );
+
+    const columnOf = (r) => (rel.includes(r) ? 'release' : prog.includes(r) ? 'inprogress' : plan.includes(r) ? 'plan' : null);
+
+    const handleDragEnd = (event) => {
+        const { active, over } = event;
+        if (!over) return;
+        const targetStatus = over.id;
+        const row = rows.find(r => r.id === active.id);
+        if (!row) return;
+        if (columnOf(row) === targetStatus) return; // dropped back on its own column — no-op
+
+        const patch = { status: targetStatus };
+        let needsFields = null;
+
+        if (targetStatus === 'release') {
+            if (!inWeek(toDate(row.prod_date))) needsFields = ['prod_date'];
+        } else {
+            // Release membership checks prod_date FIRST, regardless of status — a prod_date still in this
+            // week would pull the card straight back into Release even after the status change. Clear it.
+            if (inWeek(toDate(row.prod_date))) patch.prod_date = '';
+            if (!overlaps({ ...row, ...patch })) needsFields = ['start', 'end'];
+        }
+        onDropCard(row, patch, needsFields, needsFields ? { min: dateVal(ws), max: dateVal(we) } : null);
+    };
 
     return (
-        <div>
-            <div className={`flex items-center justify-center gap-3 rounded-xl border shadow-sm p-2.5 mb-3.5 flex-wrap ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                <button onClick={() => setWeekOffset(o => o - 1)} className={`w-8 h-8 rounded-lg border inline-flex items-center justify-center ${dark ? 'border-slate-600 bg-slate-900 text-slate-300 hover:bg-blue-500/10 hover:text-blue-400' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-blue-50 hover:text-blue-600'}`}><ChevronLeft size={16} /></button>
-                <div className="text-center min-w-[220px]">
-                    <div className={`text-[15px] font-bold ${dark ? 'text-slate-100' : 'text-slate-800'}`}>{fmtD(ws)} – {fmtD(we)} {we.getFullYear()}</div>
-                    <div className={`text-[10px] font-semibold ${dark ? 'text-slate-500' : 'text-slate-400'}`}>สัปดาห์ที่ {isoWeek(ws)}{weekOffset === 0 ? ' · สัปดาห์นี้' : ''}</div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <div>
+                <div className={`flex items-center justify-center gap-3 rounded-xl border shadow-sm p-2.5 mb-3.5 flex-wrap ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    <button onClick={() => setWeekOffset(o => o - 1)} className={`w-8 h-8 rounded-lg border inline-flex items-center justify-center ${dark ? 'border-slate-600 bg-slate-900 text-slate-300 hover:bg-blue-500/10 hover:text-blue-400' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-blue-50 hover:text-blue-600'}`}><ChevronLeft size={16} /></button>
+                    <div className="text-center min-w-[220px]">
+                        <div className={`text-[15px] font-bold ${dark ? 'text-slate-100' : 'text-slate-800'}`}>{fmtD(ws)} – {fmtD(we)} {we.getFullYear()}</div>
+                        <div className={`text-[10px] font-semibold ${dark ? 'text-slate-500' : 'text-slate-400'}`}>สัปดาห์ที่ {isoWeek(ws)}{weekOffset === 0 ? ' · สัปดาห์นี้' : ''}</div>
+                    </div>
+                    <button onClick={() => setWeekOffset(o => o + 1)} className={`w-8 h-8 rounded-lg border inline-flex items-center justify-center ${dark ? 'border-slate-600 bg-slate-900 text-slate-300 hover:bg-blue-500/10 hover:text-blue-400' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-blue-50 hover:text-blue-600'}`}><ChevronRight size={16} /></button>
+                    <button onClick={() => setWeekOffset(0)} className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border inline-flex items-center gap-1.5 ${dark ? 'text-blue-400 bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20' : 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100'}`}><Home size={13} /> สัปดาห์นี้</button>
                 </div>
-                <button onClick={() => setWeekOffset(o => o + 1)} className={`w-8 h-8 rounded-lg border inline-flex items-center justify-center ${dark ? 'border-slate-600 bg-slate-900 text-slate-300 hover:bg-blue-500/10 hover:text-blue-400' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-blue-50 hover:text-blue-600'}`}><ChevronRight size={16} /></button>
-                <button onClick={() => setWeekOffset(0)} className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border inline-flex items-center gap-1.5 ${dark ? 'text-blue-400 bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20' : 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100'}`}><Home size={13} /> สัปดาห์นี้</button>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <KanbanColumn dark={dark} title="Plan — ตามแผนสัปดาห์นี้" count={plan.length} dotClass="bg-amber-500">{plan.map(card)}</KanbanColumn>
-                <KanbanColumn dark={dark} title="In Progress — กำลังทำ" count={prog.length} dotClass="bg-blue-500">{prog.map(card)}</KanbanColumn>
-                <KanbanColumn dark={dark} title="Release — ขึ้น Prod" count={rel.length} dotClass="bg-emerald-500">{rel.map(card)}</KanbanColumn>
-            </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <KanbanColumn dark={dark} id="plan" droppable={editMode} title="Plan — ตามแผนสัปดาห์นี้" count={plan.length} dotClass="bg-amber-500">{plan.map(card)}</KanbanColumn>
+                    <KanbanColumn dark={dark} id="inprogress" droppable={editMode} title="In Progress — กำลังทำ" count={prog.length} dotClass="bg-blue-500">{prog.map(card)}</KanbanColumn>
+                    <KanbanColumn dark={dark} id="release" droppable={editMode} title="Release — ขึ้น Prod" count={rel.length} dotClass="bg-emerald-500">{rel.map(card)}</KanbanColumn>
+                </div>
 
-            <div className={`mt-3.5 text-center text-[12px] rounded-lg border p-2 ${dark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-700'}`}>
-                <b>สรุปสัปดาห์:</b> <Rocket size={13} className="inline -mt-0.5" /> ขึ้น Prod <b>{rel.length}</b> · <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 align-middle mx-0.5" /> กำลังทำ <b>{prog.length}</b> · <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 align-middle mx-0.5" /> ตามแผน <b>{plan.length}</b> รายการ
+                <div className={`mt-3.5 text-center text-[12px] rounded-lg border p-2 ${dark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-700'}`}>
+                    <b>สรุปสัปดาห์:</b> <Rocket size={13} className="inline -mt-0.5" /> ขึ้น Prod <b>{rel.length}</b> · <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 align-middle mx-0.5" /> กำลังทำ <b>{prog.length}</b> · <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 align-middle mx-0.5" /> ตามแผน <b>{plan.length}</b> รายการ
+                </div>
+                <div className={`text-center text-[10.5px] mt-3 pb-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                    การ์ดจัดกลุ่มอัตโนมัติจากวันที่ในชีต · เลื่อน <ChevronLeft size={11} className="inline" /><ChevronRight size={11} className="inline" /> เพื่อดูรายงานย้อนหลัง/ล่วงหน้า{editMode && <> · ลากการ์ดเพื่อย้าย column</>}
+                </div>
             </div>
-            <div className={`text-center text-[10.5px] mt-3 pb-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
-                การ์ดจัดกลุ่มอัตโนมัติจากวันที่ในชีต · เลื่อน <ChevronLeft size={11} className="inline" /><ChevronRight size={11} className="inline" /> เพื่อดูรายงานย้อนหลัง/ล่วงหน้า
-            </div>
-        </div>
+        </DndContext>
     );
 }
 
 /* ================= OVERVIEW ================= */
-function RelCard({ dark, r, showProject, data, editMode, onEdit, onDelete }) {
+function RelCard({ dark, r, showProject, data, editMode, onEdit, onDelete, onDuplicate }) {
     const st = (r.status || 'plan').toLowerCase();
     const s = toDate(r.start), e = toDate(r.end), p = toDate(r.prod_date);
     const lbl = r.date_label ? labelOf(r) : (s && e ? `${fmtD(s)} – ${fmtD(e)}` : (s ? fmtD(s) : ''));
@@ -283,7 +335,7 @@ function RelCard({ dark, r, showProject, data, editMode, onEdit, onDelete }) {
                         <CalendarRange size={10} /> {lbl}
                     </span>
                 )}
-                {editMode && <CardTools dark={dark} disabled={!r.id} onEdit={() => onEdit(r)} onDelete={() => onDelete(r)} />}
+                {editMode && <CardTools dark={dark} disabled={!r.id} onEdit={() => onEdit(r)} onDelete={() => onDelete(r)} onDuplicate={() => onDuplicate(r)} />}
             </div>
             <div className={`text-[11.8px] font-bold leading-tight mb-1 ${dark ? 'text-slate-100' : 'text-slate-800'}`}>{r.title}</div>
             <div className="flex gap-1 flex-wrap my-0.5">
@@ -308,7 +360,7 @@ function RelCard({ dark, r, showProject, data, editMode, onEdit, onDelete }) {
     );
 }
 
-function OverviewView({ dark, data, projects, editMode, ovMode, setOvMode, onEdit, onDelete }) {
+function OverviewView({ dark, data, projects, editMode, ovMode, setOvMode, onEdit, onDelete, onDuplicate }) {
     const rows = useMemo(() => data.filter(r => r.type === 'timeline' && inProj(r, projects)).sort(byDate), [data, projects]);
     const showProject = projects.length !== 1;
     const today = new Date();
@@ -358,7 +410,7 @@ function OverviewView({ dark, data, projects, editMode, ovMode, setOvMode, onEdi
                                     {cls === 'now' && <span className={`ml-auto text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${dark ? 'text-blue-300 bg-blue-500/10 border-blue-500/30' : 'text-blue-700 bg-blue-50 border-blue-200'}`}>เดือนนี้</span>}
                                 </div>
                                 <div className="p-2.5 flex flex-col gap-2">
-                                    {items.map(r => <RelCard key={r.id || `${r.project}-${r.code}-${r.title}`} dark={dark} r={r} showProject={showProject} data={data} editMode={editMode} onEdit={() => onEdit('timeline', r)} onDelete={() => onDelete(r)} />)}
+                                    {items.map(r => <RelCard key={r.id || `${r.project}-${r.code}-${r.title}`} dark={dark} r={r} showProject={showProject} data={data} editMode={editMode} onEdit={() => onEdit('timeline', r)} onDelete={() => onDelete(r)} onDuplicate={() => onDuplicate(r)} />)}
                                 </div>
                             </div>
                         );
@@ -686,6 +738,53 @@ function DeleteConfirmModal({ dark, label, note, onClose, onConfirm, deleting })
     );
 }
 
+const DRAG_TARGET_LABEL = { plan: 'Plan', inprogress: 'In Progress', release: 'Release' };
+const DRAG_FIELD_LABEL = { prod_date: 'วันขึ้น Prod', start: 'เริ่ม', end: 'สิ้นสุด' };
+
+function DragDateModal({ dark, row, patch, needsFields, weekRange, onClose, onConfirm, saving, error }) {
+    const targetStatus = patch.status;
+    const [values, setValues] = useState(() => {
+        const init = {};
+        needsFields.forEach(f => {
+            init[f] = dateVal(row[f]) || (f === 'prod_date' && weekRange ? weekRange.min : '');
+        });
+        return init;
+    });
+    const canConfirm = needsFields.every(f => values[f]);
+    return (
+        <ModalShell dark={dark} onClose={onClose} maxWidth="max-w-[380px]">
+            <div className={`flex items-center gap-2 px-4.5 py-3.5 border-b font-bold text-[14px] ${dark ? 'border-slate-700 bg-slate-800/60 text-slate-100' : 'border-slate-200 bg-slate-50 text-slate-800'}`}>
+                <CalendarRange size={16} /> ย้ายไปที่ {DRAG_TARGET_LABEL[targetStatus] || targetStatus}
+                <button onClick={onClose} className={`ml-auto w-7 h-7 rounded-lg border inline-flex items-center justify-center ${dark ? 'border-slate-600 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-100'}`}><X size={15} /></button>
+            </div>
+            <div className="p-4.5 flex flex-col gap-3">
+                <div className={`text-[11.5px] ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    "{row.title}" ยังไม่มีวันที่ที่จะทำให้ปรากฏใน {DRAG_TARGET_LABEL[targetStatus] || targetStatus} — กรุณากำหนดก่อนย้าย
+                </div>
+                {error && <div className={`text-[12px] font-semibold rounded-lg border px-2.5 py-2 ${dark ? 'text-red-400 bg-red-500/10 border-red-500/30' : 'text-red-700 bg-red-50 border-red-200'}`}>{error}</div>}
+                {needsFields.map(f => (
+                    <div key={f} className="flex flex-col gap-1">
+                        <label className={`text-[11px] font-bold ${dark ? 'text-slate-400' : 'text-slate-600'}`}>{DRAG_FIELD_LABEL[f] || f}</label>
+                        <input
+                            type="date" value={values[f] || ''} onChange={e => setValues(v => ({ ...v, [f]: e.target.value }))}
+                            min={f === 'prod_date' && weekRange ? weekRange.min : undefined}
+                            max={f === 'prod_date' && weekRange ? weekRange.max : undefined}
+                            className={`text-[13px] px-2.5 py-2 rounded-lg border w-full ${dark ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-white border-slate-300 text-slate-900'}`}
+                        />
+                    </div>
+                ))}
+            </div>
+            <div className={`flex gap-2 items-center px-4.5 py-3.5 border-t ${dark ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+                <span className="flex-1" />
+                <button onClick={onClose} className={`text-[12.5px] font-bold rounded-lg border px-4 py-2 ${dark ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-200 text-slate-600 hover:bg-slate-100'}`}>ยกเลิก</button>
+                <button onClick={() => onConfirm(values)} disabled={saving || !canConfirm} className="text-[12.5px] font-bold rounded-lg px-4 py-2 bg-blue-600 text-white hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-1.5">
+                    {saving ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />} ยืนยันย้าย
+                </button>
+            </div>
+        </ModalShell>
+    );
+}
+
 function FormField({ dark, name, label, kind, required, value, onChange, options, getOptionLabel }) {
     const inputCls = `text-[13px] px-2.5 py-2 rounded-lg border w-full ${dark ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-white border-slate-300 text-slate-900'}`;
     let input;
@@ -826,6 +925,10 @@ export default function RoadmapDashboard({ dark }) {
     const [deleteTarget, setDeleteTarget] = useState(null); // { id, label }
     const [deleting, setDeleting] = useState(false);
 
+    const [dragModal, setDragModal] = useState(null); // { row, targetStatus, needsFields }
+    const [dragSaving, setDragSaving] = useState(false);
+    const [dragError, setDragError] = useState('');
+
     const load = useCallback(async (isInitial) => {
         if (!isInitial) setRefreshing(true);
         try {
@@ -863,6 +966,21 @@ export default function RoadmapDashboard({ dark }) {
     useEffect(() => { if (!hasRollout && activeTab === 'rollout') setActiveTab('weekly'); }, [hasRollout, activeTab]);
 
     const token = () => localStorage.getItem(ROADMAP_TOKEN_KEY) || '';
+
+    // pushes the shared fields (title/status/health/dates) from a just-saved timeline/state row onto its linked row on the other side, if any
+    const syncLinkedRow = async (updatedRow) => {
+        let target = null;
+        if (updatedRow.type === 'timeline' && updatedRow.state_ref) {
+            target = data.find(r => r.type === 'state' && r.project === updatedRow.project && r.code === updatedRow.state_ref);
+        } else if (updatedRow.type === 'state') {
+            target = data.find(r => r.type === 'timeline' && r.project === updatedRow.project && r.state_ref === updatedRow.code);
+        }
+        if (!target || !target.id) return;
+        const syncRow = {};
+        SYNCED_TIMELINE_STATE_FIELDS.forEach(f => { syncRow[f] = updatedRow[f]; });
+        const syncRes = await roadmapApiPost(ROADMAP_SCRIPT_URL, token(), { action: 'update', id: target.id, row: syncRow });
+        setData(d => mergeResponse(d, 'update', target.id, syncRes.row));
+    };
 
     const enterEdit = async (pwd) => {
         localStorage.setItem(ROADMAP_TOKEN_KEY, pwd);
@@ -942,21 +1060,7 @@ export default function RoadmapDashboard({ dark }) {
             setData(d => mergeResponse(d, formModal.mode, formModal.id, res.row));
 
             // 3) bidirectional sync: push the shared fields to the linked row on the other side
-            if (formModal.type === 'timeline' && row.state_ref && !creatingNewState) {
-                const target = data.find(r => r.type === 'state' && r.project === row.project && r.code === row.state_ref);
-                if (target && target.id) {
-                    const syncRow = {}; SYNCED_TIMELINE_STATE_FIELDS.forEach(f => { syncRow[f] = row[f]; });
-                    const syncRes = await roadmapApiPost(ROADMAP_SCRIPT_URL, token(), { action: 'update', id: target.id, row: syncRow });
-                    setData(d => mergeResponse(d, 'update', target.id, syncRes.row));
-                }
-            } else if (formModal.type === 'state') {
-                const linkedTimeline = data.find(r => r.type === 'timeline' && r.project === row.project && r.state_ref === row.code);
-                if (linkedTimeline && linkedTimeline.id) {
-                    const syncRow = {}; SYNCED_TIMELINE_STATE_FIELDS.forEach(f => { syncRow[f] = row[f]; });
-                    const syncRes = await roadmapApiPost(ROADMAP_SCRIPT_URL, token(), { action: 'update', id: linkedTimeline.id, row: syncRow });
-                    setData(d => mergeResponse(d, 'update', linkedTimeline.id, syncRes.row));
-                }
-            }
+            if (!creatingNewState) await syncLinkedRow(row);
 
             closeForm();
         } catch (e) {
@@ -964,6 +1068,43 @@ export default function RoadmapDashboard({ dark }) {
         } finally {
             setSaving(false);
         }
+    };
+
+    // drag-and-drop: writes status (+ date fields when supplied), then syncs to a linked State if any
+    const applyDragStatusChange = async (row, patch) => {
+        setDragError('');
+        try {
+            const res = await roadmapApiPost(ROADMAP_SCRIPT_URL, token(), { action: 'update', id: row.id, row: patch });
+            setData(d => mergeResponse(d, 'update', row.id, res.row));
+            await syncLinkedRow({ ...row, ...patch });
+            return true;
+        } catch (e) {
+            setDragError('ย้ายรายการไม่สำเร็จ: ' + e.message);
+            return false;
+        }
+    };
+
+    const onDropCard = (row, patch, needsFields, weekRange) => {
+        if (!needsFields) {
+            applyDragStatusChange(row, patch);
+        } else {
+            setDragError('');
+            setDragModal({ row, patch, needsFields, weekRange });
+        }
+    };
+
+    const confirmDragDate = async (values) => {
+        if (!dragModal) return;
+        setDragSaving(true);
+        const ok = await applyDragStatusChange(dragModal.row, { ...dragModal.patch, ...values });
+        setDragSaving(false);
+        if (ok) setDragModal(null);
+    };
+
+    // duplicate: opens the Timeline add form pre-filled from the source row (id and linked State cleared)
+    const duplicateRow = (r) => {
+        const { id, state_ref, ...rest } = r;
+        openForm('timeline', null, { ...rest, state_ref: '' });
     };
 
     const buildDeleteTarget = (r) => {
@@ -1078,6 +1219,13 @@ export default function RoadmapDashboard({ dark }) {
                     </div>
                 )}
 
+                {dragError && !dragModal && (
+                    <div className={`mb-2 text-[11.5px] font-semibold rounded-lg border px-3 py-2 flex items-center gap-1.5 ${dark ? 'text-red-400 bg-red-500/10 border-red-500/30' : 'text-red-700 bg-red-50 border-red-200'}`}>
+                        <AlertTriangle size={13} /> {dragError}
+                        <button onClick={() => setDragError('')} className="ml-auto shrink-0"><X size={13} /></button>
+                    </div>
+                )}
+
                 {/* Tabs */}
                 <div className="flex items-center gap-1.5 flex-wrap">
                     {TABS.map(tb => {
@@ -1116,6 +1264,7 @@ export default function RoadmapDashboard({ dark }) {
                         dark={dark} data={data} projects={projects} editMode={editMode}
                         weekOffset={weekOffset} setWeekOffset={setWeekOffset}
                         onEdit={(type, r) => openForm(type, r)} onDelete={requestDelete}
+                        onDuplicate={duplicateRow} onDropCard={onDropCard}
                     />
                 )}
                 {activeTab === 'overview' && (
@@ -1123,6 +1272,7 @@ export default function RoadmapDashboard({ dark }) {
                         dark={dark} data={data} projects={projects} editMode={editMode}
                         ovMode={ovMode} setOvMode={setOvMode}
                         onEdit={(type, r) => openForm(type, r)} onDelete={requestDelete}
+                        onDuplicate={duplicateRow}
                     />
                 )}
                 {activeTab === 'rollout' && hasRollout && (
@@ -1150,6 +1300,12 @@ export default function RoadmapDashboard({ dark }) {
             )}
             {deleteTarget && (
                 <DeleteConfirmModal dark={dark} label={deleteTarget.label} note={deleteTarget.note} deleting={deleting} onClose={() => setDeleteTarget(null)} onConfirm={confirmDelete} />
+            )}
+            {dragModal && (
+                <DragDateModal
+                    dark={dark} row={dragModal.row} patch={dragModal.patch} needsFields={dragModal.needsFields} weekRange={dragModal.weekRange}
+                    saving={dragSaving} error={dragError} onClose={() => setDragModal(null)} onConfirm={confirmDragDate}
+                />
             )}
         </div>
     );
