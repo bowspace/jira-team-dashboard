@@ -3,9 +3,10 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, ComposedChart, Line, ReferenceLine, ScatterChart, Scatter, LineChart
 } from 'recharts';
-import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, ChevronUp, ArrowUpDown, X, Target, Bug, TrendingUp, Shield, Zap, Info, PanelLeftClose, PanelLeftOpen, Headphones, GanttChart } from 'lucide-react';
+import { Calendar, Users, Briefcase, AlertTriangle, CheckCircle, Clock, Filter, Activity, Layers, Sun, Moon, RefreshCw, ChevronDown, ChevronUp, ArrowUpDown, X, Target, Bug, TrendingUp, Shield, Zap, Info, PanelLeftClose, PanelLeftOpen, Headphones, GanttChart, Route } from 'lucide-react';
 import SupportDashboard from './SupportDashboard';
 import TimelineDashboard from './TimelineDashboard';
+import RoadmapDashboard from './RoadmapDashboard';
 import { parseCSV } from './utils/parseCSV';
 
 // --- Helper: check if status is excluded from performance metrics ---
@@ -825,13 +826,14 @@ export default function App() {
         const p = window.location.pathname;
         if (p === '/support') return 'support';
         if (p === '/timeline') return 'timeline';
+        if (p === '/roadmap') return 'roadmap';
         return 'jira';
     };
     const [activePage, setActivePageState] = useState(getPageFromPath);
     const [timelineMinDelay, setTimelineMinDelay] = useState('');
     const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     const setActivePage = (page) => {
-        const pathMap = { jira: '/', support: '/support', timeline: '/timeline' };
+        const pathMap = { jira: '/', support: '/support', timeline: '/timeline', roadmap: '/roadmap' };
         window.history.pushState({}, '', pathMap[page] || '/');
         if (page === 'timeline') {
             setFilters(prev => ({ ...prev, dateType: 'monthly', dateValues: prev.dateValues.length === 0 ? [currentMonth] : prev.dateValues }));
@@ -1582,6 +1584,7 @@ export default function App() {
         { key: 'jira', label: t.jiraPerformance, icon: Activity, path: '/' },
         { key: 'timeline', label: t.taskTimeline, icon: GanttChart, path: '/timeline' },
         { key: 'support', label: t.itSupport, icon: Headphones, path: '/support' },
+        { key: 'roadmap', label: 'Roadmap', icon: Route, path: '/roadmap' },
     ];
 
     return (
@@ -1669,6 +1672,7 @@ export default function App() {
             <main className="flex-1 min-w-0 pb-20 md:pb-0">
             <div className="p-4 md:p-6">
             {activePage === 'support' && <SupportDashboard dark={dark} lang={lang} />}
+            {activePage === 'roadmap' && <RoadmapDashboard dark={dark} />}
             {(activePage === 'jira' || activePage === 'timeline') && (
             <>
             {/* Sticky Header + Filters */}
