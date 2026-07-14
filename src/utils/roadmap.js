@@ -65,9 +65,12 @@ export function isoWeek(d) {
 }
 
 export function projList(data) {
+    // ทุกโปรเจคที่ประกาศไว้ (type=project) มาก่อนตามลำดับ order — รวมโปรเจคที่ยังไม่มี timeline/state/channel
+    // เพื่อให้เพิ่มรายการแรกให้โปรเจคใหม่ได้ (ไม่งั้น dropdown ในฟอร์มจะไม่มีโปรเจคที่เพิ่งสร้าง)
+    // จากนั้นต่อด้วย orphan keys (แถวข้อมูลที่ไม่มี meta) — วิวที่ต้องกรองเฉพาะที่มีข้อมูลจะ .filter() เองอยู่แล้ว
     const metas = data.filter(r => r.type === 'project').sort(byOrder);
     const keys = [...new Set(data.filter(r => r.project && r.type && r.type !== 'project').map(r => r.project))];
-    const ordered = [...metas.map(m => m.project).filter(k => keys.includes(k)), ...keys.filter(k => !metas.some(m => m.project === k))];
+    const ordered = [...metas.map(m => m.project), ...keys.filter(k => !metas.some(m => m.project === k))];
     return [...new Set(ordered)];
 }
 

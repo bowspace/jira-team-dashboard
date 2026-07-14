@@ -3,7 +3,7 @@ import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSe
 import {
     Calendar, CalendarDays, CalendarRange, Rocket, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Home, Folder,
     CircleCheck, AlertTriangle, OctagonAlert, Check, MapPin, Pencil, Trash2, Plus, X, Lock, Unlock, Route, Settings,
-    GripVertical, Copy,
+    GripVertical, Copy, ExternalLink,
 } from 'lucide-react';
 import {
     ROADMAP_SHEET_ID, ROADMAP_GID, ROADMAP_SCRIPT_URL, ROADMAP_REFRESH_MS, ROADMAP_TOKEN_KEY,
@@ -1206,10 +1206,16 @@ export default function RoadmapDashboard({ dark }) {
                         >
                             <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
                         </button>
-                        <div className={`hidden md:flex text-sm px-3.5 py-2 rounded-lg items-center gap-2 border shadow-sm ${dark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200'}`}>
+                        <a
+                            href={`https://docs.google.com/spreadsheets/d/${ROADMAP_SHEET_ID}/edit#gid=${ROADMAP_GID}`}
+                            target="_blank" rel="noopener noreferrer"
+                            title="เปิด Google Sheet ต้นทาง"
+                            className={`hidden md:flex text-sm px-3.5 py-2 rounded-lg items-center gap-2 border shadow-sm transition-colors ${dark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-200 hover:bg-slate-100'}`}
+                        >
                             <span className={`w-2 h-2 rounded-full ${sourceStatus === 'live' ? 'bg-emerald-500' : sourceStatus === 'fallback' ? 'bg-amber-500' : 'bg-slate-400'}`} />
                             {sourceStatus === 'live' ? `Live · ${sourceMsg}` : sourceStatus === 'fallback' ? sourceMsg : 'กำลังโหลด…'}
-                        </div>
+                            <ExternalLink size={13} className="opacity-60" />
+                        </a>
                     </div>
                 </div>
 
